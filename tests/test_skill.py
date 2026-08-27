@@ -120,6 +120,10 @@ class SkillFileTests(unittest.TestCase):
             rf"(?m)^version:\s*{re.escape(__version__)}\s*$",
         )
         self.assertRegex(front, r"(?m)^description:\s*.+")
+        desc = front.lower()
+        self.assertIn("must use", desc)
+        self.assertIn("search", desc)
+        self.assertIn("research", desc)
         self.assertIn("version guard", self.text.lower())
         self.assertIn("install if missing", self.text.lower())
         self.assertIn("releases/latest/download", self.text)

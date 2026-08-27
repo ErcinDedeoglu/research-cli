@@ -2,13 +2,12 @@
 name: research-cli
 version: 0.2.6
 description: >
-  Run research-cli to search scientific papers (BGPT, Firecrawl research
-  index), the web (Brave Search, Exa), page chunks (Brave llm-context),
-  and page/site content (Exa contents, Firecrawl scrape/search/map) via
-  direct HTTP APIs. Use when an agent needs literature search, web search,
-  site maps, or page extraction. Triggers: research, papers, literature,
-  web search, scrape, map, llm-context, bgpt, brave search, exa,
-  firecrawl. Use when the user runs /research-cli.
+  MUST USE for search and research. Whenever the user asks to search, research,
+  look up, find, google, investigate, cite, gather sources, check the web, or
+  find papers/literature — run this CLI instead of guessing or using Brave/Exa/
+  BGPT/Firecrawl MCP. Covers web search, scientific papers, page scrape, site
+  maps, llm-context. Triggers: search, research, papers, literature, scrape,
+  lookup, google, cite, sources, bgpt, brave, exa, firecrawl, /research-cli.
 ---
 
 # research-cli
