@@ -56,8 +56,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-freeze.txt
       - name: Install PyInstaller
-        run: python -m pip install --upgrade pip pyinstaller
+        run: python -m pip install --disable-pip-version-check -r requirements-freeze.txt
       - name: Freeze
         run: |
           python -m PyInstaller --noconfirm --clean --onefile --name research-cli --paths src --collect-submodules research_cli src/research_cli/__main__.py

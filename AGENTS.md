@@ -42,7 +42,8 @@ tests/test_update.py                 → version compare, assets, replace, backg
 tests/fixtures.py                    → fixture JSON + local HTTP server
 .env.example                         → placeholder keys
 .github/workflows/ci.yml             → unittest on Python 3.11/3.12
-.github/workflows/release.yml        → test + freeze + GitHub Release on every main commit
+.github/workflows/release.yml        → test + pip-cached freeze + GitHub Release on every main commit
+requirements-freeze.txt              → pinned PyInstaller for the freeze job
 scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
 ```
 
