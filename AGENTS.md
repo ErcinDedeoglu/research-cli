@@ -28,7 +28,7 @@ After install, `research-cli` is the same entry as `python -m research_cli`. Key
 ```
 src/research_cli/cli.py              → argparse + dispatch
 src/research_cli/update.py           → GitHub Releases self-update (frozen/zipapp)
-src/research_cli/http.py             → HttpRequest/Response, urllib transport
+src/research_cli/http.py             → HttpRequest/Response, urllib transport; frozen SSL uses certifi or OS CA bundle
 src/research_cli/keys.py             → env keys / MissingKeyError
 src/research_cli/providers/bgpt.py   → POST /api/mcp-search
 src/research_cli/providers/brave.py  → GET web/search, GET llm/context

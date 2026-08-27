@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -117,6 +118,18 @@ class MissingKeyTests(unittest.TestCase):
         proc = _run_module("brave", "search", "q")
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("brave", proc.stderr.lower())
+
+    def test_subprocess_env_file_fills_brave_key(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "env"
+            path.write_text("BRAVE_API_KEY=from-file\n", encoding="utf-8")
+            env = _clean_env()
+            env.pop("RESEARCH_CLI_NO_ENV_FILE", None)
+            env.pop("BRAVE_API_KEY", None)
+            env["RESEARCH_CLI_ENV_FILE"] = str(path)
+            proc = _run_module("brave", "search", "q", env=env)
+            self.assertNotIn("missing API key", proc.stderr.lower())
+            self.assertNotEqual(proc.returncode, 2)
 
 
 class FixtureServerCliTests(unittest.TestCase):

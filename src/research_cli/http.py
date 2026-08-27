@@ -1,15 +1,27 @@
 from __future__ import annotations
 
 import json
+import os
+import ssl
+import sys
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 
 from research_cli import __version__
 from research_cli.errors import ProviderHttpError
+
+_SYSTEM_CA_FILES = (
+    "/etc/ssl/cert.pem",
+    "/etc/ssl/certs/ca-certificates.crt",
+    "/etc/pki/tls/certs/ca-bundle.crt",
+    "/etc/ssl/ca-bundle.pem",
+    "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+)
 
 USER_AGENT = f"research-cli/{__version__}"
 
@@ -66,12 +78,39 @@ def with_query(url: str, params: Mapping[str, Any]) -> str:
     return url + ("&" if "?" in url else "?") + query
 
 
+def ssl_context() -> ssl.SSLContext:
+    """CA bundle for urllib. Frozen PyInstaller builds do not ship certs."""
+    cafile = (os.environ.get("SSL_CERT_FILE") or "").strip()
+    capath = (os.environ.get("SSL_CERT_DIR") or "").strip()
+    if cafile or capath:
+        return ssl.create_default_context(
+            cafile=cafile or None,
+            capath=capath or None,
+        )
+    try:
+        import certifi
+
+        bundled = certifi.where()
+        if bundled and Path(bundled).is_file():
+            return ssl.create_default_context(cafile=bundled)
+    except ImportError:
+        pass
+    frozen = bool(getattr(sys, "frozen", False)) or hasattr(sys, "_MEIPASS")
+    if frozen:
+        for candidate in _SYSTEM_CA_FILES:
+            if Path(candidate).is_file():
+                return ssl.create_default_context(cafile=candidate)
+    return ssl.create_default_context()
+
+
 def urllib_transport(request: HttpRequest, timeout: float = 60.0) -> HttpResponse:
     req = urllib.request.Request(request.url, data=request.body, method=request.method)
     for key, value in request.headers.items():
         req.add_header(key, value)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        with urllib.request.urlopen(
+            req, timeout=timeout, context=ssl_context()
+        ) as response:
             return HttpResponse(
                 status=int(response.status),
                 headers=dict(response.headers.items()),
