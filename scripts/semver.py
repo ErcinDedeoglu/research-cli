@@ -23,7 +23,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INIT = ROOT / "src" / "research_cli" / "__init__.py"
+SKILL = ROOT / "skills" / "research-cli" / "SKILL.md"
 _VERSION_RE = re.compile(r'^__version__ = "([^"]+)"', re.M)
+_SKILL_VERSION_RE = re.compile(r"(?m)^version:\s*\S+\s*$")
 _SUBJECT_RE = re.compile(r"^(\w+)(?:\([^)]*\))?(!)?:\s*")
 _RANK = {"patch": 0, "minor": 1, "major": 2}
 
@@ -103,6 +105,30 @@ def apply_version(version: str, path: Path = INIT) -> None:
     path.write_text(updated, encoding="utf-8")
 
 
+def apply_skill_version(version: str, path: Path = SKILL) -> None:
+    parse_semver(version)
+    text = path.read_text(encoding="utf-8")
+    if _SKILL_VERSION_RE.search(text):
+        updated, count = _SKILL_VERSION_RE.subn(f"version: {version}", text, count=1)
+        if count != 1:
+            raise ValueError(f"could not replace skill version in {path}")
+    else:
+        updated, count = re.subn(
+            r"(?m)^(name:\s*research-cli\s*)$",
+            rf"\1\nversion: {version}",
+            text,
+            count=1,
+        )
+        if count != 1:
+            raise ValueError(f"could not insert skill version in {path}")
+    path.write_text(updated, encoding="utf-8")
+
+
+def apply_release_version(version: str) -> None:
+    apply_version(version, INIT)
+    apply_skill_version(version, SKILL)
+
+
 def _git(args: list[str], cwd: Path) -> str:
     proc = subprocess.run(
         ["git", *args],
@@ -174,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
         print(next_version())
         return 0
     version = args.version or next_version()
-    apply_version(version)
+    apply_release_version(version)
     print(version)
     return 0
 

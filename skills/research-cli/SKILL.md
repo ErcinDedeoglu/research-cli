@@ -1,20 +1,49 @@
 ---
 name: research-cli
+version: 0.2.2
 description: >
-  Run this repo's research-cli to search scientific papers (BGPT, Firecrawl
-  research index), the web (Brave Search, Exa), page chunks (Brave llm-context),
-  and page/site content (Exa contents, Firecrawl scrape/search/map) via direct
-  HTTP APIs. Use when an agent needs literature search, web search, site maps,
-  or page extraction. Triggers: research, papers, literature, web search,
-  scrape, map, llm-context, bgpt, brave search, exa, firecrawl. Use when the
-  user runs /research-cli.
+  Run research-cli to search scientific papers (BGPT, Firecrawl research
+  index), the web (Brave Search, Exa), page chunks (Brave llm-context),
+  and page/site content (Exa contents, Firecrawl scrape/search/map) via
+  direct HTTP APIs. Use when an agent needs literature search, web search,
+  site maps, or page extraction. Triggers: research, papers, literature,
+  web search, scrape, map, llm-context, bgpt, brave search, exa,
+  firecrawl. Use when the user runs /research-cli.
 ---
 
 # research-cli
 
 Call vendor HTTP APIs through this CLI. Do not call BGPT, Brave, Exa, or Firecrawl MCP servers.
 
-Install from the repo root with `pip install -e .`, then run `research-cli`. From a checkout without install: `python -m research_cli`.
+Canonical skill: https://raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md
+Deployed copy: kenopahq/skills/research-cli. Keep them in lockstep.
+
+## Version guard
+
+Frontmatter `version:` must match the binary. Do not use a mismatched copy silently.
+
+1. Binary version: `research-cli --version` prints `research-cli X.Y.Z` (checkout: `python -m research_cli --version`). If the binary is missing, install it first.
+2. Compare X.Y.Z to `version:` above.
+3. **Skill older** (frontmatter < binary): overwrite the file you loaded with the canonical skill from GitHub:
+   `https://raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md`
+   If this copy is in kenopahq/skills or an agent skills dir, write that path.
+4. **Binary older** (binary < frontmatter): frozen/zipapp — --self-update (also runs in the background after a command). pip — reinstall `git+https://github.com/ErcinDedeoglu/research-cli.git`.
+5. **Equal:** run research commands.
+
+## Install (if `research-cli` is missing)
+
+Prefer a frozen binary from [Releases](https://github.com/ErcinDedeoglu/research-cli/releases/latest) (no Python):
+
+```bash
+# macOS Apple Silicon
+curl -fsSL -o research-cli \
+  https://github.com/ErcinDedeoglu/research-cli/releases/latest/download/research-cli-Darwin-arm64
+chmod +x research-cli
+```
+
+Other artifacts: `research-cli-Linux-x86_64`, `research-cli-Linux-aarch64`, `research-cli-Windows-x86_64.exe`. Intel Macs: zipapp. Unsigned macOS: `xattr -d com.apple.quarantine research-cli`.
+
+Python 3.11+ without pip: `research-cli.pyz` from the same latest-release URL. pip: `pip install "git+https://github.com/ErcinDedeoglu/research-cli.git"`. Checkout: `pip install -e .` or `PYTHONPATH=src python -m research_cli`. Frozen/zipapp self-update after each command. Off: `RESEARCH_CLI_NO_UPDATE=1`.
 
 ## When to use which provider
 
@@ -40,9 +69,7 @@ research-cli firecrawl papers read arxiv:1706.03762 --question "what is the arch
 research-cli firecrawl papers related arxiv:1706.03762 --intent "efficient attention" --mode similar
 ```
 
-`--base-url` overrides the API origin (local fixture servers). Output is JSON on stdout.
-
-`--version` prints the SemVer from the install. Frozen binaries and `research-cli.pyz` force-update from GitHub Releases after the command finishes (background, does not block JSON output). Foreground: --self-update. Disable with `RESEARCH_CLI_NO_UPDATE=1`. pip installs are not replaced.
+`--base-url` overrides the API origin (local fixture servers). Output is JSON on stdout. `--version` prints SemVer.
 
 ## Env keys
 

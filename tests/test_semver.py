@@ -69,6 +69,20 @@ class VersionFileTests(unittest.TestCase):
             self.assertEqual(semver.read_version_file(path), "0.2.0")
             self.assertIn('__version__ = "0.2.0"', path.read_text(encoding="utf-8"))
 
+    def test_apply_skill_version_replaces_or_inserts(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "SKILL.md"
+            path.write_text(
+                "---\nname: research-cli\ndescription: x\n---\n\n# research-cli\n",
+                encoding="utf-8",
+            )
+            semver.apply_skill_version("0.2.0", path)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("version: 0.2.0", text)
+            semver.apply_skill_version("0.3.1", path)
+            self.assertIn("version: 0.3.1", path.read_text(encoding="utf-8"))
+            self.assertNotIn("version: 0.2.0", path.read_text(encoding="utf-8"))
+
 
 class GitNextVersionTests(unittest.TestCase):
     def _repo(self) -> tempfile.TemporaryDirectory[str]:

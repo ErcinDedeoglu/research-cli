@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from research_cli import __version__  # noqa: E402
 from research_cli.cli import build_parser  # noqa: E402
 from research_cli.keys import (  # noqa: E402
     optional_bgpt_key,
@@ -41,7 +42,13 @@ def _example_lines(text: str) -> list[str]:
     for block in blocks:
         for raw in block.splitlines():
             line = raw.strip()
-            if line and not line.startswith("#"):
+            if not line or line.startswith("#"):
+                continue
+            try:
+                tokens = shlex.split(line)
+            except ValueError:
+                continue
+            if tokens and tokens[0] in {"research-cli", "python"}:
                 lines.append(line)
     return lines
 
@@ -108,7 +115,12 @@ class SkillFileTests(unittest.TestCase):
         self.assertIsNotNone(match)
         front = match.group(1)
         self.assertRegex(front, r"(?m)^name:\s*research-cli\s*$")
+        self.assertRegex(
+            front,
+            rf"(?m)^version:\s*{re.escape(__version__)}\s*$",
+        )
         self.assertRegex(front, r"(?m)^description:\s*.+")
+        self.assertIn("version guard", self.text.lower())
         body = self.text.lower()
         self.assertIn("research-cli", body)
         self.assertIn("python -m research_cli", body)

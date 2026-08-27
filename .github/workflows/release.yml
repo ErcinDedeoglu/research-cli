@@ -51,10 +51,10 @@ jobs:
           tag="v${version}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- src/research_cli/__init__.py; then
-            echo "version file already ${version}"
+          if git diff --quiet -- src/research_cli/__init__.py skills/research-cli/SKILL.md; then
+            echo "version files already ${version}"
           else
-            git add src/research_cli/__init__.py
+            git add src/research_cli/__init__.py skills/research-cli/SKILL.md
             git commit -m "chore: release ${tag}"
           fi
           if git rev-parse "refs/tags/${tag}" >/dev/null 2>&1; then

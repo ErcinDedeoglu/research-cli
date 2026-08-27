@@ -57,7 +57,7 @@ Source of truth: [`.github/workflows/release.yml`](.github/workflows/release.yml
 | Step | Job | What happens |
 |------|-----|----------------|
 | 1 | `test` | `PYTHONPATH=src python -m unittest discover -s tests -v` |
-| 2 | `version` | `python scripts/semver.py next` then `apply`; commit `chore: release vX.Y.Z`; `git tag vX.Y.Z`; push tag + commit |
+| 2 | `version` | `python scripts/semver.py next` then `apply` (writes `__version__` **and** skill frontmatter `version:`); commit `chore: release vX.Y.Z`; `git tag vX.Y.Z`; push tag + commit |
 | 3 | `zipapp` + `freeze` (parallel) | Checkout **the tag**, not the triggering SHA. Zipapp + PyInstaller onefile. Pip cache keyed by `requirements-freeze.txt` |
 | 4 | `publish` | `gh release create "$TAG" artifacts --verify-tag --latest`. Tag already exists; do **not** pass `--target $TAG` (GitHub 422: `target_commitish` must be a branch or SHA) |
 
@@ -95,6 +95,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 |------|-----|
 | Agent needs papers/web/scrape | Point at `skills/research-cli/SKILL.md` and the CLI — do not call vendor MCP servers |
 | Add/change a CLI command or flag | Update provider + `cli.py` + skill examples + `tests/test_skill.py` in the same change, then copy `skills/research-cli/SKILL.md` to `/Users/ercin/git/github/kenopahq/skills/research-cli/` |
+| Skill `version:` vs `research-cli --version` | Must match. Skill older → replace file from `raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md`. Binary older → `--self-update` |
 | Add a provider HTTP path | Injectable `transport`; assert method, host/path, auth header, parsed fields |
 | Skill vs `--help` disagree | Code and skill both wrong until `test_skill` is green |
 | Need live keys | `.env` locally; never commit it |
@@ -136,4 +137,4 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | `RESEARCH_CLI_NO_UPDATE` | Disables the post-command spawn; `--self-update` still runs |
 | llm-context | Brave `GET /res/v1/llm/context` — page chunks, not titles-only |
 | papers | Firecrawl research index (`/v2/search/research/papers`), not BGPT |
-| SemVer | `src/research_cli/__init__.py` `__version__`; tags `vMAJOR.MINOR.PATCH`; `python scripts/semver.py next` |
+| SemVer | `src/research_cli/__init__.py` `__version__`; skill frontmatter `version:` must match; tags `vMAJOR.MINOR.PATCH`; `python scripts/semver.py next` |
