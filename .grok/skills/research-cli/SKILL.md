@@ -1,11 +1,13 @@
 ---
 name: research-cli
 description: >
-  Run this repo's research-cli to search scientific papers (BGPT), the web
-  (Brave Search, Exa), and page content (Exa contents, Firecrawl scrape/search)
-  via direct HTTP APIs. Use when an agent needs literature search, web search,
+  Run this repo's research-cli to search scientific papers (BGPT, Firecrawl
+  research index), the web (Brave Search, Exa), page chunks (Brave llm-context),
+  and page/site content (Exa contents, Firecrawl scrape/search/map) via direct
+  HTTP APIs. Use when an agent needs literature search, web search, site maps,
   or page extraction. Triggers: research, papers, literature, web search,
-  scrape, bgpt, brave search, exa, firecrawl. Use when the user runs /research-cli.
+  scrape, map, llm-context, bgpt, brave search, exa, firecrawl. Use when the
+  user runs /research-cli.
 ---
 
 # research-cli
@@ -16,20 +18,26 @@ Install from the repo root with `pip install -e .`, then run `research-cli`. Fro
 
 ## When to use which provider
 
-- **bgpt** — scientific papers (title or DOI, evidence fields). Optional `BGPT_API_KEY` (free tier works without a key).
-- **brave search** — general web hits with title and URL. Requires `BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`.
-- **exa** — semantic web search, or fetch page text/highlights for a known URL (`contents`). Requires `EXA_API_KEY`.
-- **firecrawl** — scrape a known URL to markdown, or search the web for URLs/snippets. Requires `FIRECRAWL_API_KEY`.
+- **bgpt** — full-text experimental evidence (title/DOI). Optional `BGPT_API_KEY`.
+- **brave search** — general web hits. `llm-context` returns ranked page chunks in one call (prefer this when you need content, not just URLs). Requires `BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`.
+- **exa** — semantic search with domain/date/category filters, or `contents` for a known URL. Requires `EXA_API_KEY`.
+- **firecrawl** — scrape a URL (`--live` for a fresh fetch), search the web, `map` a site's URLs, or the paper index (`papers search/inspect/read/related`: PubMed/bioRxiv/arXiv abstracts and passages). Requires `FIRECRAWL_API_KEY`.
 
 ## Commands
 
 ```bash
 research-cli bgpt search "CRISPR delivery neurons" --num-results 5
-research-cli brave search "rust async runtime" --count 10
-research-cli exa search "latest LLM evaluations" --num-results 10
+research-cli brave search "rust async runtime" --count 10 --freshness pw
+research-cli brave llm-context "best practices for RAG" --count 20
+research-cli exa search "LLM evaluations" --include-domains arxiv.org --category "research paper" --start-published 2025-01-01 --highlights
 research-cli exa contents https://example.com/paper
-research-cli firecrawl scrape https://example.com
-research-cli firecrawl search "site:arxiv.org transformers" --limit 10
+research-cli firecrawl scrape https://example.com --live
+research-cli firecrawl search "transformers" --categories research --include-domains arxiv.org --scrape
+research-cli firecrawl map https://docs.example.com --search webhook --limit 50
+research-cli firecrawl papers search "CRISPR off-target T cells" --k 10
+research-cli firecrawl papers inspect arxiv:1706.03762
+research-cli firecrawl papers read arxiv:1706.03762 --question "what is the architecture?"
+research-cli firecrawl papers related arxiv:1706.03762 --intent "efficient attention" --mode similar
 ```
 
 `--base-url` overrides the API origin (local fixture servers). Output is JSON on stdout.

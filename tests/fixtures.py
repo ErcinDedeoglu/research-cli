@@ -89,12 +89,92 @@ FIRECRAWL_SEARCH_PAYLOAD = {
     },
 }
 
+BRAVE_LLM_TITLE = "Fixture Brave LLM Context Page"
+BRAVE_LLM_URL = "https://brave.example/context"
+BRAVE_LLM_TEXT = "Fixture llm context snippet about RAG."
+BRAVE_LLM_PAYLOAD = {
+    "grounding": {
+        "generic": [
+            {
+                "url": BRAVE_LLM_URL,
+                "title": BRAVE_LLM_TITLE,
+                "snippets": [BRAVE_LLM_TEXT],
+            }
+        ],
+        "map": [],
+    },
+    "sources": {
+        BRAVE_LLM_URL: {"title": BRAVE_LLM_TITLE, "hostname": "brave.example"}
+    },
+}
+
+FIRECRAWL_MAP_URL = "https://docs.firecrawl.dev/webhooks"
+FIRECRAWL_MAP_TITLE = "Fixture Firecrawl Map Link"
+FIRECRAWL_MAP_PAYLOAD = {
+    "success": True,
+    "links": [
+        {
+            "url": FIRECRAWL_MAP_URL,
+            "title": FIRECRAWL_MAP_TITLE,
+            "description": "Fixture map description",
+        }
+    ],
+}
+
+PAPER_ID = "arxiv:2105.05233"
+PAPER_TITLE = "Fixture Firecrawl Paper Diffusion"
+PAPER_ABSTRACT = "Fixture abstract from the research index."
+PAPER_PASSAGE = "Fixture passage answering the architecture question."
+PAPERS_SEARCH_PAYLOAD = {
+    "success": True,
+    "results": [
+        {
+            "paperId": "2014215642691656232",
+            "primaryId": PAPER_ID,
+            "title": PAPER_TITLE,
+            "abstract": PAPER_ABSTRACT,
+            "score": 0.9,
+        }
+    ],
+}
+PAPERS_INSPECT_PAYLOAD = {
+    "success": True,
+    "paper": {
+        "paperId": "2014215642691656232",
+        "primaryId": PAPER_ID,
+        "title": PAPER_TITLE,
+        "abstract": PAPER_ABSTRACT,
+        "authors": "Fixture Author",
+        "categories": ["cs.LG"],
+    },
+}
+PAPERS_READ_PAYLOAD = {
+    "success": True,
+    "passages": [{"text": PAPER_PASSAGE, "score": 0.8}],
+}
+PAPERS_RELATED_TITLE = "Fixture Related Diffusion Paper"
+PAPERS_RELATED_PAYLOAD = {
+    "success": True,
+    "results": [
+        {
+            "paperId": "482107036680302043",
+            "primaryId": "arxiv:2006.11239",
+            "title": PAPERS_RELATED_TITLE,
+            "abstract": "Fixture related abstract",
+            "score": 0.03,
+        }
+    ],
+    "poolSize": 40,
+    "truncated": False,
+}
+
 _POST_ROUTES = {
     "/api/mcp-search": BGPT_PAYLOAD,
     "/search": EXA_SEARCH_PAYLOAD,
     "/contents": EXA_CONTENTS_PAYLOAD,
     "/v2/scrape": FIRECRAWL_SCRAPE_PAYLOAD,
     "/v2/search": FIRECRAWL_SEARCH_PAYLOAD,
+    "/v2/map": FIRECRAWL_MAP_PAYLOAD,
 }
 
 
@@ -117,9 +197,25 @@ class FixtureHandler(BaseHTTPRequestHandler):
         return
 
     def do_GET(self) -> None:  # noqa: N802
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
         if path == "/res/v1/web/search":
             self._send(200, BRAVE_PAYLOAD)
+            return
+        if path == "/res/v1/llm/context":
+            self._send(200, BRAVE_LLM_PAYLOAD)
+            return
+        if path == "/v2/search/research/papers":
+            self._send(200, PAPERS_SEARCH_PAYLOAD)
+            return
+        if path.endswith("/similar"):
+            self._send(200, PAPERS_RELATED_PAYLOAD)
+            return
+        if path.startswith("/v2/search/research/papers/"):
+            if "query=" in parsed.query:
+                self._send(200, PAPERS_READ_PAYLOAD)
+                return
+            self._send(200, PAPERS_INSPECT_PAYLOAD)
             return
         self._send(404, {"error": f"no fixture for GET {path}"})
 

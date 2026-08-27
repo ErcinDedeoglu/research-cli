@@ -30,9 +30,37 @@ def build_search_request(
     *,
     api_key: str,
     num_results: int = 10,
+    include_domains: list[str] | None = None,
+    exclude_domains: list[str] | None = None,
+    category: str | None = None,
+    start_published: str | None = None,
+    end_published: str | None = None,
+    highlights: bool = False,
+    text: bool = False,
     origin: str = DEFAULT_ORIGIN,
 ) -> HttpRequest:
-    payload = {"query": query, "type": "auto", "numResults": num_results}
+    payload: dict[str, Any] = {
+        "query": query,
+        "type": "auto",
+        "numResults": num_results,
+    }
+    if include_domains:
+        payload["includeDomains"] = include_domains
+    if exclude_domains:
+        payload["excludeDomains"] = exclude_domains
+    if category:
+        payload["category"] = category
+    if start_published:
+        payload["startPublishedDate"] = start_published
+    if end_published:
+        payload["endPublishedDate"] = end_published
+    contents: dict[str, Any] = {}
+    if highlights:
+        contents["highlights"] = True
+    if text:
+        contents["text"] = True
+    if contents:
+        payload["contents"] = contents
     return HttpRequest(
         method="POST",
         url=join_url(origin, SEARCH_PATH),
@@ -56,24 +84,32 @@ def build_contents_request(
     )
 
 
+def _exa_hit(item: Any) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    title = item.get("title")
+    url = item.get("url") or item.get("id")
+    text = item.get("text")
+    highlights = item.get("highlights")
+    if not title and not url and not text and not highlights:
+        return None
+    record: dict[str, Any] = {}
+    if title:
+        record["title"] = title
+    if url:
+        record["url"] = url
+    if text:
+        record["text"] = text
+    if highlights:
+        record["highlights"] = highlights
+    return record
+
+
 def parse_search_response(payload: Any) -> dict[str, Any]:
     items = payload.get("results") if isinstance(payload, dict) else None
     if not isinstance(items, list):
         items = []
-    results: list[dict[str, Any]] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        title = item.get("title")
-        url = item.get("url") or item.get("id")
-        if not title and not url:
-            continue
-        record: dict[str, Any] = {}
-        if title:
-            record["title"] = title
-        if url:
-            record["url"] = url
-        results.append(record)
+    results = [hit for hit in (_exa_hit(item) for item in items) if hit]
     return {"provider": "exa", "operation": "search", "results": results}
 
 
@@ -81,25 +117,7 @@ def parse_contents_response(payload: Any) -> dict[str, Any]:
     items = payload.get("results") if isinstance(payload, dict) else None
     if not isinstance(items, list):
         items = []
-    results: list[dict[str, Any]] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        record: dict[str, Any] = {}
-        title = item.get("title")
-        url = item.get("url") or item.get("id")
-        text = item.get("text")
-        highlights = item.get("highlights")
-        if title:
-            record["title"] = title
-        if url:
-            record["url"] = url
-        if text:
-            record["text"] = text
-        if highlights:
-            record["highlights"] = highlights
-        if record:
-            results.append(record)
+    results = [hit for hit in (_exa_hit(item) for item in items) if hit]
     return {"provider": "exa", "operation": "contents", "results": results}
 
 
@@ -108,12 +126,29 @@ def search(
     *,
     api_key: str,
     num_results: int = 10,
+    include_domains: list[str] | None = None,
+    exclude_domains: list[str] | None = None,
+    category: str | None = None,
+    start_published: str | None = None,
+    end_published: str | None = None,
+    highlights: bool = False,
+    text: bool = False,
     origin: str = DEFAULT_ORIGIN,
     transport: Transport | None = None,
     timeout: float = 60.0,
 ) -> dict[str, Any]:
     request = build_search_request(
-        query, api_key=api_key, num_results=num_results, origin=origin
+        query,
+        api_key=api_key,
+        num_results=num_results,
+        include_domains=include_domains,
+        exclude_domains=exclude_domains,
+        category=category,
+        start_published=start_published,
+        end_published=end_published,
+        highlights=highlights,
+        text=text,
+        origin=origin,
     )
     payload = execute_json(
         request, provider="exa", transport=transport, timeout=timeout

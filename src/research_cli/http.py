@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote, urlencode
 
 from research_cli.errors import ProviderHttpError
 
@@ -34,6 +35,34 @@ def join_url(origin: str, path: str) -> str:
     if not path.startswith("/"):
         path = "/" + path
     return origin + path
+
+
+def path_segment(value: str) -> str:
+    return quote(value, safe="")
+
+
+def encode_query(params: Mapping[str, Any]) -> str:
+    items: list[tuple[str, str]] = []
+    for key, value in params.items():
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            items.append((key, "true" if value else "false"))
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            for item in value:
+                if item is None or item == "":
+                    continue
+                items.append((key, str(item)))
+        else:
+            items.append((key, str(value)))
+    return urlencode(items)
+
+
+def with_query(url: str, params: Mapping[str, Any]) -> str:
+    query = encode_query(params)
+    if not query:
+        return url
+    return url + ("&" if "?" in url else "?") + query
 
 
 def urllib_transport(request: HttpRequest, timeout: float = 60.0) -> HttpResponse:

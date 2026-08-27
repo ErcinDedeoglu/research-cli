@@ -15,11 +15,16 @@ from research_cli.cli import main  # noqa: E402
 
 from fixtures import (  # noqa: E402
     BGPT_TITLE,
+    BRAVE_LLM_TEXT,
     BRAVE_URL,
     EXA_CONTENTS_TEXT,
     EXA_SEARCH_URL,
+    FIRECRAWL_MAP_URL,
     FIRECRAWL_SCRAPE_MD,
     FIRECRAWL_SEARCH_URL,
+    PAPER_PASSAGE,
+    PAPER_TITLE,
+    PAPERS_RELATED_TITLE,
     start_fixture_server,
 )
 
@@ -74,6 +79,9 @@ class MissingKeyTests(unittest.TestCase):
             (["exa", "contents", "https://example.com"], "exa"),
             (["firecrawl", "search", "q"], "firecrawl"),
             (["firecrawl", "scrape", "https://example.com"], "firecrawl"),
+            (["brave", "llm-context", "q"], "brave"),
+            (["firecrawl", "map", "https://example.com"], "firecrawl"),
+            (["firecrawl", "papers", "search", "q"], "firecrawl"),
         ]
         empty = {}
         for argv, provider in cases:
@@ -140,9 +148,29 @@ class FixtureServerCliTests(unittest.TestCase):
         contents = self._cli("exa", "contents", "https://exa.example/page")
         self.assertEqual(contents.returncode, 0, contents.stderr)
         self.assertIn(EXA_CONTENTS_TEXT, contents.stdout)
-        scrape = self._cli("firecrawl", "scrape", "https://firecrawl.example/page")
+        scrape = self._cli("firecrawl", "scrape", "https://firecrawl.example/page", "--live")
         self.assertEqual(scrape.returncode, 0, scrape.stderr)
         self.assertIn(FIRECRAWL_SCRAPE_MD, scrape.stdout)
+
+    def test_new_research_commands(self) -> None:
+        cases = [
+            (["brave", "llm-context", "RAG"], BRAVE_LLM_TEXT),
+            (["firecrawl", "map", "https://docs.firecrawl.dev", "--search", "webhook"], FIRECRAWL_MAP_URL),
+            (["firecrawl", "papers", "search", "diffusion"], PAPER_TITLE),
+            (["firecrawl", "papers", "inspect", "arxiv:2105.05233"], PAPER_TITLE),
+            (
+                ["firecrawl", "papers", "read", "arxiv:2105.05233", "--question", "architecture"],
+                PAPER_PASSAGE,
+            ),
+            (
+                ["firecrawl", "papers", "related", "arxiv:2105.05233", "--intent", "attention"],
+                PAPERS_RELATED_TITLE,
+            ),
+        ]
+        for args, needle in cases:
+            proc = self._cli(*args)
+            self.assertEqual(proc.returncode, 0, proc.stderr + str(args))
+            self.assertIn(needle, proc.stdout)
 
 
 if __name__ == "__main__":

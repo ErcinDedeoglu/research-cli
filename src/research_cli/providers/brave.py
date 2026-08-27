@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlencode
 
 from research_cli.http import (
     USER_AGENT,
@@ -9,10 +8,20 @@ from research_cli.http import (
     Transport,
     execute_json,
     join_url,
+    with_query,
 )
 
 DEFAULT_ORIGIN = "https://api.search.brave.com"
 SEARCH_PATH = "/res/v1/web/search"
+LLM_CONTEXT_PATH = "/res/v1/llm/context"
+
+
+def _headers(api_key: str) -> dict[str, str]:
+    return {
+        "Accept": "application/json",
+        "User-Agent": USER_AGENT,
+        "X-Subscription-Token": api_key,
+    }
 
 
 def build_search_request(
@@ -20,19 +29,43 @@ def build_search_request(
     *,
     api_key: str,
     count: int = 10,
+    country: str | None = None,
+    freshness: str | None = None,
+    offset: int | None = None,
     origin: str = DEFAULT_ORIGIN,
 ) -> HttpRequest:
-    url = join_url(origin, SEARCH_PATH) + "?" + urlencode({"q": query, "count": count})
-    return HttpRequest(
-        method="GET",
-        url=url,
-        headers={
-            "Accept": "application/json",
-            "User-Agent": USER_AGENT,
-            "X-Subscription-Token": api_key,
+    url = with_query(
+        join_url(origin, SEARCH_PATH),
+        {
+            "q": query,
+            "count": count,
+            "country": country,
+            "freshness": freshness,
+            "offset": offset,
         },
-        body=None,
     )
+    return HttpRequest(method="GET", url=url, headers=_headers(api_key), body=None)
+
+
+def build_llm_context_request(
+    query: str,
+    *,
+    api_key: str,
+    count: int = 20,
+    country: str | None = None,
+    freshness: str | None = None,
+    origin: str = DEFAULT_ORIGIN,
+) -> HttpRequest:
+    url = with_query(
+        join_url(origin, LLM_CONTEXT_PATH),
+        {
+            "q": query,
+            "count": count,
+            "country": country,
+            "freshness": freshness,
+        },
+    )
+    return HttpRequest(method="GET", url=url, headers=_headers(api_key), body=None)
 
 
 def parse_search_response(payload: Any) -> dict[str, Any]:
@@ -63,19 +96,97 @@ def parse_search_response(payload: Any) -> dict[str, Any]:
     return {"provider": "brave", "operation": "search", "results": results}
 
 
+def _llm_item(item: Any) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    record: dict[str, Any] = {}
+    title = item.get("title") or item.get("name")
+    url = item.get("url")
+    snippets = item.get("snippets")
+    if title:
+        record["title"] = title
+    if url:
+        record["url"] = url
+    if isinstance(snippets, list) and snippets:
+        record["snippets"] = snippets
+        texts = [part for part in snippets if isinstance(part, str) and part]
+        if texts:
+            record["text"] = "\n\n".join(texts)
+    if not record.get("url") and not record.get("text") and not record.get("title"):
+        return None
+    return record
+
+
+def parse_llm_context_response(payload: Any) -> dict[str, Any]:
+    results: list[dict[str, Any]] = []
+    grounding = payload.get("grounding") if isinstance(payload, dict) else None
+    if isinstance(grounding, dict):
+        generic = grounding.get("generic")
+        if isinstance(generic, list):
+            for item in generic:
+                record = _llm_item(item)
+                if record:
+                    results.append(record)
+        poi = grounding.get("poi")
+        record = _llm_item(poi)
+        if record:
+            results.append(record)
+        mapped = grounding.get("map")
+        if isinstance(mapped, list):
+            for item in mapped:
+                record = _llm_item(item)
+                if record:
+                    results.append(record)
+    return {"provider": "brave", "operation": "llm-context", "results": results}
+
+
 def web_search(
     query: str,
     *,
     api_key: str,
     count: int = 10,
+    country: str | None = None,
+    freshness: str | None = None,
+    offset: int | None = None,
     origin: str = DEFAULT_ORIGIN,
     transport: Transport | None = None,
     timeout: float = 60.0,
 ) -> dict[str, Any]:
     request = build_search_request(
-        query, api_key=api_key, count=count, origin=origin
+        query,
+        api_key=api_key,
+        count=count,
+        country=country,
+        freshness=freshness,
+        offset=offset,
+        origin=origin,
     )
     payload = execute_json(
         request, provider="brave search", transport=transport, timeout=timeout
     )
     return parse_search_response(payload)
+
+
+def llm_context(
+    query: str,
+    *,
+    api_key: str,
+    count: int = 20,
+    country: str | None = None,
+    freshness: str | None = None,
+    origin: str = DEFAULT_ORIGIN,
+    transport: Transport | None = None,
+    timeout: float = 60.0,
+) -> dict[str, Any]:
+    request = build_llm_context_request(
+        query,
+        api_key=api_key,
+        count=count,
+        country=country,
+        freshness=freshness,
+        origin=origin,
+    )
+    payload = execute_json(
+        request, provider="brave search", transport=transport, timeout=timeout
+    )
+    return parse_llm_context_response(payload)
