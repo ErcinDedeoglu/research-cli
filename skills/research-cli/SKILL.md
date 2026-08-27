@@ -4,10 +4,10 @@ version: 0.2.8
 description: >
   MUST USE for search and research. Whenever the user asks to search, research,
   look up, find, google, investigate, cite, gather sources, check the web, or
-  find papers/literature — run this CLI instead of guessing or using Brave/Exa/
-  BGPT/Firecrawl MCP. Covers web search, scientific papers, page scrape, site
-  maps, llm-context. Triggers: search, research, papers, literature, scrape,
-  lookup, google, cite, sources, bgpt, brave, exa, firecrawl, /research-cli.
+  find papers/literature — run this CLI and call EVERY provider in parallel
+  (bgpt, brave, exa, firecrawl). Do not pick one. Do not guess or use vendor
+  MCP. Triggers: search, research, papers, literature, scrape, lookup, google,
+  cite, sources, bgpt, brave, exa, firecrawl, /research-cli.
 ---
 
 # research-cli
@@ -43,12 +43,21 @@ chmod +x "$HOME/.local/bin/research-cli"
 
 Windows: `$base/research-cli-Windows-x86_64.exe` → `research-cli.exe` on PATH. macOS quarantine: `xattr -d com.apple.quarantine "$HOME/.local/bin/research-cli"`.
 
-## When to use which provider
+## Search / research
 
-- **bgpt** — full-text experimental evidence (title/DOI). Optional `BGPT_API_KEY`.
-- **brave search** — general web hits. `llm-context` returns ranked page chunks in one call (prefer this when you need content, not just URLs). Requires `BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`.
-- **exa** — semantic search (`--include-domains`, `--category`, `--start-published`, `--highlights`; stacking domain+category+date often returns no hits), or `contents` for a known URL. Requires `EXA_API_KEY`.
-- **firecrawl** — scrape a URL (`--live` for a fresh fetch), search the web (`--categories research`, `--scrape` for markdown), `map` a site's URLs, or the paper index (`papers search/inspect/read/related`: PubMed/bioRxiv/arXiv abstracts and passages). Requires `FIRECRAWL_API_KEY`.
+On search or research, run **all** of these in parallel with the same query. Do not pick one provider.
+
+```bash
+research-cli bgpt search "QUERY"
+research-cli brave llm-context "QUERY"
+research-cli exa search "QUERY"
+research-cli firecrawl search "QUERY" --categories research
+research-cli firecrawl papers search "QUERY"
+```
+
+Merge the JSON. Then scrape/read specific URLs or paper IDs if needed.
+
+**bgpt** papers (optional `BGPT_API_KEY`). **brave** `llm-context` is page chunks (`BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`); `search` is titles/URLs. **exa** semantic search (`EXA_API_KEY`). **firecrawl** web search + paper index (`FIRECRAWL_API_KEY`).
 
 ## Commands
 

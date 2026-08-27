@@ -124,6 +124,8 @@ class SkillFileTests(unittest.TestCase):
         self.assertIn("must use", desc)
         self.assertIn("search", desc)
         self.assertIn("research", desc)
+        self.assertIn("parallel", desc)
+        self.assertIn("every provider", self.text.lower())
         self.assertIn("version guard", self.text.lower())
         self.assertIn("install if missing", self.text.lower())
         self.assertIn("releases/latest/download", self.text)
