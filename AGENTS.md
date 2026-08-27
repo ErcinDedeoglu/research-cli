@@ -50,6 +50,35 @@ scripts/semver.py                    → next/apply MAJOR.MINOR.PATCH from v* ta
 scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
 ```
 
+## Release lifecycle (every push to `main`)
+
+Source of truth: [`.github/workflows/release.yml`](.github/workflows/release.yml) + [`scripts/semver.py`](scripts/semver.py). Do not invent a second process.
+
+| Step | Job | What happens |
+|------|-----|----------------|
+| 1 | `test` | `PYTHONPATH=src python -m unittest discover -s tests -v` |
+| 2 | `version` | `python scripts/semver.py next` then `apply`; commit `chore: release vX.Y.Z`; `git tag vX.Y.Z`; push tag + commit |
+| 3 | `zipapp` + `freeze` (parallel) | Checkout **the tag**, not the triggering SHA. Zipapp + PyInstaller onefile. Pip cache keyed by `requirements-freeze.txt` |
+| 4 | `publish` | `gh release create "$TAG" artifacts --verify-tag --latest`. Tag already exists; do **not** pass `--target $TAG` (GitHub 422: `target_commitish` must be a branch or SHA) |
+
+**Version**
+
+| Fact | Value |
+|------|--------|
+| Single source | `src/research_cli/__init__.py` `__version__` |
+| Package metadata | `pyproject.toml` `dynamic = ["version"]` → `attr = research_cli.__version__` |
+| Tags | `vMAJOR.MINOR.PATCH` only (`r-*` leftovers are not SemVer) |
+| `feat:` | minor |
+| `fix:` / `chore:` / `docs:` / other | patch |
+| `type!:` or `BREAKING CHANGE:` | major; on 0.x that is still a minor |
+| No `v*` tag yet | inspect HEAD only; base is the file version |
+| HEAD already at `vX.Y.Z` | no bump |
+| Preview | `python scripts/semver.py next` |
+
+**Artifacts** (self-update `asset_name()` must match): `research-cli-Darwin-arm64`, `research-cli-Linux-x86_64`, `research-cli-Linux-aarch64`, `research-cli-Windows-x86_64.exe`, `research-cli.pyz`. No Intel Mac binary (macos-13 retired; zipapp). Frozen/zipapp clients force-update from `/releases/latest` after each command.
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and does **not** bump or publish.
+
 ## Golden Samples
 
 | For | Reference | Key patterns |
@@ -58,6 +87,7 @@ scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
 | CLI wiring | `src/research_cli/cli.py` | shared `--base-url`/`--timeout`, leaf subparser, `_dispatch` |
 | Skill stay-in-sync | `tests/test_skill.py` | examples must `parse_args`; every leaf command has an example |
 | Fixture HTTP | `tests/fixtures.py` | path-routed JSON, not live vendors |
+| Cut a release | `.github/workflows/release.yml` + `scripts/semver.py` | conventional commit on `main`; workflow owns `__version__`, tag, freeze, `gh release create --verify-tag` |
 
 ## Heuristics
 
@@ -78,6 +108,8 @@ scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
 - Keep `skills/research-cli/SKILL.md` aligned with `build_parser()` and `keys.py`
 - Run `PYTHONPATH=src python -m unittest discover -s tests -v` after CLI/skill changes
 - JSON on stdout, errors on stderr; missing Brave/Exa/Firecrawl keys exit 2 and name the provider
+- Conventional commits on `main`; leave `__version__` to the release workflow
+- Publish with `gh release create <tag> --verify-tag` (tag is created in the `version` job)
 
 ### Ask first
 - New vendor SDKs or wrapping remaining MCP tools (crawl, interact, monitors, Brave images/video, Exa agent)
@@ -88,6 +120,8 @@ scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
 - Put the skill under `.grok/`
 - Commit `.env`, API keys, or fixture-server base URLs as production defaults
 - Re-implement request builders inside tests (drive shipped functions)
+- Hand-edit `__version__` on `main`, or `gh release create --target vX.Y.Z` (invalid `target_commitish`)
+- Re-add `macos-13` / `Darwin-x86_64` freeze (runner retired)
 
 ## Terminology
 
