@@ -22,56 +22,38 @@ Deployed copy: kenopahq/skills/research-cli. Keep them in lockstep.
 
 Frontmatter `version:` must match the binary. Do not use a mismatched copy silently.
 
-1. Detect the binary (`command -v research-cli`). If it is missing, **install it** using [Install if missing](#install-if-missing), then continue.
-2. Binary version: `research-cli --version` prints `research-cli X.Y.Z` (checkout: `python -m research_cli --version`).
-3. Compare X.Y.Z to `version:` above.
-4. **Skill older** (frontmatter < binary): overwrite the file you loaded with the canonical skill from GitHub:
+1. Detect (`command -v research-cli`). If missing, **install** using [Install if missing](#install-if-missing), then continue. No Python, pip, or zipapp — this is a self-contained binary.
+2. `research-cli --version` prints `research-cli X.Y.Z`. Compare to `version:` above.
+3. **Skill older** (frontmatter < binary): overwrite the file you loaded with
    `https://raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md`
-   If this copy is in kenopahq/skills or an agent skills dir, write that path.
-5. **Binary older** (binary < frontmatter): frozen/zipapp — --self-update (also runs in the background after a command). pip — reinstall `git+https://github.com/ErcinDedeoglu/research-cli.git`.
-6. **Equal:** run research commands.
+4. **Binary older** (binary < frontmatter): --self-update (also runs in the background after a command).
+5. **Equal:** run research commands.
 
 ## Install if missing
 
-Do this whenever `command -v research-cli` fails (and you are not in a checkout where `PYTHONPATH=src python -m research_cli` works). Prefer a frozen binary (no Python). Put it on `PATH` (`$HOME/.local/bin` does not need root).
+Download **one** frozen binary from GitHub Releases (no Python). Put it on `PATH` (`$HOME/.local/bin` needs no root).
 
 ```bash
 command -v research-cli
 
 mkdir -p "$HOME/.local/bin"
-# add to PATH for this session if needed:
-# export PATH="$HOME/.local/bin:$PATH"
-
+export PATH="$HOME/.local/bin:$PATH"
 base="https://github.com/ErcinDedeoglu/research-cli/releases/latest/download"
-
-# macOS Apple Silicon
-curl -fsSL -o "$HOME/.local/bin/research-cli" "$base/research-cli-Darwin-arm64"
+os="$(uname -s)"
+arch="$(uname -m)"
+case "$os-$arch" in
+  Darwin-arm64) asset=research-cli-Darwin-arm64 ;;
+  Linux-x86_64) asset=research-cli-Linux-x86_64 ;;
+  Linux-aarch64|Linux-arm64) asset=research-cli-Linux-aarch64 ;;
+  *) echo "unsupported platform: $os $arch"; exit 1 ;;
+esac
+curl -fsSL -o "$HOME/.local/bin/research-cli" "$base/$asset"
 chmod +x "$HOME/.local/bin/research-cli"
-
-# Linux x86_64
-curl -fsSL -o "$HOME/.local/bin/research-cli" "$base/research-cli-Linux-x86_64"
-chmod +x "$HOME/.local/bin/research-cli"
-
-# Linux ARM (aarch64 / arm64)
-curl -fsSL -o "$HOME/.local/bin/research-cli" "$base/research-cli-Linux-aarch64"
-chmod +x "$HOME/.local/bin/research-cli"
-
-# Windows (PowerShell or Git Bash) — save as research-cli.exe on PATH
-curl -fsSL -o research-cli.exe "$base/research-cli-Windows-x86_64.exe"
-
-# Intel Mac, or any OS with Python 3.11+ and no matching frozen binary
-curl -fsSL -o "$HOME/.local/bin/research-cli.pyz" "$base/research-cli.pyz"
-# run: python3 "$HOME/.local/bin/research-cli.pyz"
-
-# pip (Python 3.11+)
-pip install "git+https://github.com/ErcinDedeoglu/research-cli.git"
-
-# from a checkout of ErcinDedeoglu/research-cli
-pip install -e .
-# or: PYTHONPATH=src python -m research_cli
 ```
 
-Pick **one** artifact for this machine; do not run every curl. Unsigned macOS downloads may need `xattr -d com.apple.quarantine "$HOME/.local/bin/research-cli"`. Then confirm with `research-cli --version` and return to the version guard. Frozen/zipapp installs self-update after each command. Off: `RESEARCH_CLI_NO_UPDATE=1`.
+Windows: download `$base/research-cli-Windows-x86_64.exe`, name it `research-cli.exe`, put it on `PATH`.
+
+Unsigned macOS: `xattr -d com.apple.quarantine "$HOME/.local/bin/research-cli"`. Then `research-cli --version` and return to the version guard. The binary self-updates after each command. Off: `RESEARCH_CLI_NO_UPDATE=1`.
 
 ## When to use which provider
 

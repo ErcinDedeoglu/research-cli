@@ -124,9 +124,11 @@ class SkillFileTests(unittest.TestCase):
         self.assertIn("install if missing", self.text.lower())
         self.assertIn("releases/latest/download", self.text)
         self.assertIn("command -v research-cli", self.text)
+        self.assertIn("research-cli-Darwin-arm64", self.text)
+        self.assertNotIn("pip install", self.text)
+        self.assertNotIn("python -m research_cli", self.text)
         body = self.text.lower()
         self.assertIn("research-cli", body)
-        self.assertIn("python -m research_cli", body)
         self.assertTrue("mcp" in body and "do not" in body)
 
     def test_examples_parse_on_the_real_parser(self) -> None:
