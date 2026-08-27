@@ -131,6 +131,7 @@ class SkillFileTests(unittest.TestCase):
         self.assertIn("research-cli-Darwin-arm64", self.text)
         self.assertNotIn("pip install", self.text)
         self.assertNotIn("python -m research_cli", self.text)
+        self.assertNotIn("zipapp", self.text.lower())
         body = self.text.lower()
         self.assertIn("research-cli", body)
         self.assertTrue("mcp" in body and "do not" in body)

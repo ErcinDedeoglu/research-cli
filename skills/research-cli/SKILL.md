@@ -12,47 +12,36 @@ description: >
 
 # research-cli
 
-Call vendor HTTP APIs through this CLI. Do not call BGPT, Brave, Exa, or Firecrawl MCP servers.
-
-Canonical skill: https://raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md
-Deployed copy: kenopahq/skills/research-cli. Keep them in lockstep.
+Do not call BGPT, Brave, Exa, or Firecrawl MCP servers. Run this CLI.
 
 ## Version guard
 
-Frontmatter `version:` must match the binary. Do not use a mismatched copy silently.
+`version:` above must match `research-cli --version`.
 
-1. Detect (`command -v research-cli`). If missing, **install** using [Install if missing](#install-if-missing), then continue. No Python, pip, or zipapp — this is a self-contained binary.
-2. `research-cli --version` prints `research-cli X.Y.Z`. Compare to `version:` above.
-3. **Skill older** (frontmatter < binary): overwrite the file you loaded with
-   `https://raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md`
-4. **Binary older** (binary < frontmatter): --self-update (also runs in the background after a command).
-5. **Equal:** run research commands.
+1. Missing binary → [Install if missing](#install-if-missing).
+2. Skill older → replace this file with https://raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md
+3. Binary older → --self-update
+4. Match → run commands
 
 ## Install if missing
 
-Download **one** frozen binary from GitHub Releases (no Python). Put it on `PATH` (`$HOME/.local/bin` needs no root).
-
 ```bash
 command -v research-cli
-
 mkdir -p "$HOME/.local/bin"
 export PATH="$HOME/.local/bin:$PATH"
 base="https://github.com/ErcinDedeoglu/research-cli/releases/latest/download"
-os="$(uname -s)"
-arch="$(uname -m)"
+os="$(uname -s)"; arch="$(uname -m)"
 case "$os-$arch" in
   Darwin-arm64) asset=research-cli-Darwin-arm64 ;;
   Linux-x86_64) asset=research-cli-Linux-x86_64 ;;
   Linux-aarch64|Linux-arm64) asset=research-cli-Linux-aarch64 ;;
-  *) echo "unsupported platform: $os $arch"; exit 1 ;;
+  *) echo "unsupported: $os $arch"; exit 1 ;;
 esac
 curl -fsSL -o "$HOME/.local/bin/research-cli" "$base/$asset"
 chmod +x "$HOME/.local/bin/research-cli"
 ```
 
-Windows: download `$base/research-cli-Windows-x86_64.exe`, name it `research-cli.exe`, put it on `PATH`.
-
-Unsigned macOS: `xattr -d com.apple.quarantine "$HOME/.local/bin/research-cli"`. Then `research-cli --version` and return to the version guard. The binary self-updates after each command. Off: `RESEARCH_CLI_NO_UPDATE=1`.
+Windows: `$base/research-cli-Windows-x86_64.exe` → `research-cli.exe` on PATH. macOS quarantine: `xattr -d com.apple.quarantine "$HOME/.local/bin/research-cli"`.
 
 ## When to use which provider
 
