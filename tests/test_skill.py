@@ -17,6 +17,7 @@ from research_cli.keys import (  # noqa: E402
     require_brave_key,
     require_exa_key,
     require_firecrawl_key,
+    require_reddit_credentials,
 )
 
 SKILL = ROOT / "skills" / "research-cli" / "SKILL.md"
@@ -29,6 +30,8 @@ ENV_NAMES = (
     "BRAVE_SEARCH_API_KEY",
     "EXA_API_KEY",
     "FIRECRAWL_API_KEY",
+    "REDDIT_CLIENT_ID",
+    "REDDIT_CLIENT_SECRET",
 )
 
 
@@ -178,6 +181,7 @@ class SkillFileTests(unittest.TestCase):
         self.assertTrue(callable(require_brave_key))
         self.assertTrue(callable(require_exa_key))
         self.assertTrue(callable(require_firecrawl_key))
+        self.assertTrue(callable(require_reddit_credentials))
         for name in ENV_NAMES:
             self.assertIn(
                 f"`{name}`",
@@ -187,7 +191,14 @@ class SkillFileTests(unittest.TestCase):
         self.assertIn("brave search", self.text.lower())
         self.assertIn(".config/research-cli/env", self.text)
         example = ENV_EXAMPLE.read_text(encoding="utf-8")
-        for name in ("BRAVE_API_KEY", "EXA_API_KEY", "FIRECRAWL_API_KEY", "BGPT_API_KEY"):
+        for name in (
+            "BRAVE_API_KEY",
+            "EXA_API_KEY",
+            "FIRECRAWL_API_KEY",
+            "BGPT_API_KEY",
+            "REDDIT_CLIENT_ID",
+            "REDDIT_CLIENT_SECRET",
+        ):
             self.assertIn(name, example)
         self.assertTrue(AGENTS.is_file(), f"missing {AGENTS}")
         agents = AGENTS.read_text(encoding="utf-8")

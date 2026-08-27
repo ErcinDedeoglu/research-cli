@@ -5,14 +5,14 @@ description: >
   MUST USE for search and research. Whenever the user asks to search, research,
   look up, find, google, investigate, cite, gather sources, check the web, or
   find papers/literature — run this CLI and call EVERY provider in parallel
-  (bgpt, brave, exa, firecrawl). Do not pick one. Do not guess or use vendor
-  MCP. Triggers: search, research, papers, literature, scrape, lookup, google,
-  cite, sources, bgpt, brave, exa, firecrawl, /research-cli.
+  (bgpt, brave, exa, firecrawl, reddit). Do not pick one. Do not guess or use
+  vendor MCP. Triggers: search, research, papers, literature, scrape, lookup,
+  google, cite, sources, bgpt, brave, exa, firecrawl, reddit, /research-cli.
 ---
 
 # research-cli
 
-Do not call BGPT, Brave, Exa, or Firecrawl MCP servers. Run this CLI.
+Do not call BGPT, Brave, Exa, Firecrawl, or Reddit MCP servers. Run this CLI.
 
 ## Version guard
 
@@ -51,6 +51,8 @@ After install, write `$HOME/.config/research-cli/env` (Windows: `%APPDATA%\resea
 BRAVE_API_KEY=
 EXA_API_KEY=
 FIRECRAWL_API_KEY=
+REDDIT_CLIENT_ID=
+REDDIT_CLIENT_SECRET=
 # BGPT_API_KEY=
 ```
 
@@ -66,11 +68,12 @@ research-cli brave llm-context "QUERY"
 research-cli exa search "QUERY"
 research-cli firecrawl search "QUERY" --categories research
 research-cli firecrawl papers search "QUERY"
+research-cli reddit search "QUERY"
 ```
 
-Merge the JSON. Then scrape/read specific URLs or paper IDs if needed.
+Merge the JSON. Then scrape/read specific URLs or paper IDs if needed. For Reddit, search then `reddit thread` on the best permalinks; `reddit subreddit` to browse a community.
 
-**bgpt** papers (optional `BGPT_API_KEY`). **brave** `llm-context` is page chunks (`BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`); `search` is titles/URLs. **exa** semantic search (`EXA_API_KEY`). **firecrawl** web search + paper index (`FIRECRAWL_API_KEY`).
+**bgpt** papers (optional `BGPT_API_KEY`). **brave** `llm-context` is page chunks (`BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`); `search` is titles/URLs. **exa** semantic search (`EXA_API_KEY`). **firecrawl** web search + paper index (`FIRECRAWL_API_KEY`). **reddit** posts + comments (`REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET`).
 
 ## Commands
 
@@ -87,6 +90,11 @@ research-cli firecrawl papers search "CRISPR off-target T cells" --k 10
 research-cli firecrawl papers inspect arxiv:1706.03762
 research-cli firecrawl papers read arxiv:1706.03762 --question "what is the architecture?"
 research-cli firecrawl papers related arxiv:1706.03762 --intent "efficient attention" --mode similar
+research-cli reddit search "CRISPR neurons" --sort top --time week --limit 10
+research-cli reddit search "async rust" --subreddit rust
+research-cli reddit thread abc123 --sort top --limit 50
+research-cli reddit thread https://www.reddit.com/r/python/comments/abc123/title/
+research-cli reddit subreddit rust --sort top --time week --limit 25
 ```
 
 `--base-url` overrides the API origin (local fixture servers). Output is JSON on stdout. `--version` prints SemVer.
@@ -99,5 +107,6 @@ research-cli firecrawl papers related arxiv:1706.03762 --intent "efficient atten
 | brave search | `BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY` | yes |
 | exa | `EXA_API_KEY` | yes |
 | firecrawl | `FIRECRAWL_API_KEY` | yes |
+| reddit | `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` | yes |
 
-Missing Brave, Exa, or Firecrawl keys exit non-zero and name the provider. BGPT HTTP error bodies are printed on failure.
+Missing Brave, Exa, Firecrawl, or Reddit keys exit non-zero and name the provider. BGPT HTTP error bodies are printed on failure.

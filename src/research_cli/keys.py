@@ -91,3 +91,13 @@ def require_firecrawl_key(environ: Mapping[str, str]) -> str:
     if not key:
         raise MissingKeyError("firecrawl", ("FIRECRAWL_API_KEY",))
     return key
+
+
+def require_reddit_credentials(environ: Mapping[str, str]) -> tuple[str, str]:
+    client_id = (environ.get("REDDIT_CLIENT_ID") or "").strip()
+    client_secret = (environ.get("REDDIT_CLIENT_SECRET") or "").strip()
+    if not client_id or not client_secret:
+        raise MissingKeyError(
+            "reddit", ("REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET")
+        )
+    return client_id, client_secret

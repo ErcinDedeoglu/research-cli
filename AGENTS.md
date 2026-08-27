@@ -3,7 +3,7 @@
 
 # AGENTS.md
 
-**This repo** is an agent-facing **research CLI**. It calls **BGPT, Brave Search, Exa, and Firecrawl over HTTP REST** (not MCP). Agents use the CLI via the skill; coding agents change code here.
+**This repo** is an agent-facing **research CLI**. It calls **BGPT, Brave Search, Exa, Firecrawl, and Reddit over HTTP REST** (not MCP). Agents use the CLI via the skill; coding agents change code here.
 
 **Playbook for running research:** [`skills/research-cli/SKILL.md`](skills/research-cli/SKILL.md) — commands, env keys, when-to-use. Do not copy that into this file.
 
@@ -35,6 +35,7 @@ src/research_cli/providers/brave.py  → GET web/search, GET llm/context
 src/research_cli/providers/exa.py    → POST /search, POST /contents
 src/research_cli/providers/firecrawl.py → scrape, search, map
 src/research_cli/providers/firecrawl_papers.py → papers search/inspect/read/related
+src/research_cli/providers/reddit.py     → POST /api/v1/access_token, GET /search, GET /comments/{id}, GET /r/{sub}/{sort}
 skills/research-cli/SKILL.md         → agent playbook (not under .grok/; copy to kenopahq/skills/research-cli on change)
 tests/test_skill.py                  → skill ↔ CLI parser/keys alignment
 tests/test_providers.py              → injectable HTTP: method/path/auth/parse
@@ -108,7 +109,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 ### Always
 - Keep `skills/research-cli/SKILL.md` aligned with `build_parser()` and `keys.py`
 - Run `PYTHONPATH=src python -m unittest discover -s tests -v` after CLI/skill changes
-- JSON on stdout, errors on stderr; missing Brave/Exa/Firecrawl keys exit 2 and name the provider
+- JSON on stdout, errors on stderr; missing Brave/Exa/Firecrawl/Reddit keys exit 2 and name the provider
 - Conventional commits on `main`; leave `__version__` to the release workflow
 - Publish with `gh release create <tag> --verify-tag` (tag is created in the `version` job)
 
@@ -129,7 +130,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | Term | Means |
 |------|-------|
 | Skill | `skills/research-cli/SKILL.md` — how agents **run** the CLI |
-| Provider | One HTTP backend: bgpt, brave, exa, firecrawl |
+| Provider | One HTTP backend: bgpt, brave, exa, firecrawl, reddit |
 | `--base-url` | Override API origin (fixture tests), not a vendor path |
 | `--live` | Firecrawl scrape `maxAge=0` |
 | `--self-update` | Foreground GitHub latest-release replace (always download matching asset) |

@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from research_cli.errors import ProviderHttpError  # noqa: E402
 from research_cli.http import HttpResponse  # noqa: E402
-from research_cli.providers import bgpt, brave, exa, firecrawl  # noqa: E402
+from research_cli.providers import bgpt, brave, exa, firecrawl, reddit  # noqa: E402
 
 from research_cli.providers import firecrawl_papers as papers  # noqa: E402
 
@@ -52,6 +52,17 @@ from fixtures import (  # noqa: E402
     PAPERS_RELATED_PAYLOAD,
     PAPERS_RELATED_TITLE,
     PAPERS_SEARCH_PAYLOAD,
+    REDDIT_COMMENT_BODY,
+    REDDIT_LINK_URL,
+    REDDIT_POST_ID,
+    REDDIT_REPLY_BODY,
+    REDDIT_SEARCH_PAYLOAD,
+    REDDIT_SELFTEXT,
+    REDDIT_THREAD_PAYLOAD,
+    REDDIT_TITLE,
+    REDDIT_TOKEN,
+    REDDIT_TOKEN_PAYLOAD,
+    REDDIT_URL,
 )
 
 
@@ -66,6 +77,22 @@ class CapturingTransport:
         body = json.dumps(self.payload).encode("utf-8")
         return HttpResponse(
             status=self.status,
+            headers={"Content-Type": "application/json"},
+            body=body,
+        )
+
+
+class SequentialTransport:
+    def __init__(self, *payloads: object) -> None:
+        self.payloads = list(payloads)
+        self.requests: list = []
+
+    def __call__(self, request):
+        self.requests.append(request)
+        payload = self.payloads.pop(0)
+        body = json.dumps(payload).encode("utf-8")
+        return HttpResponse(
+            status=200,
             headers={"Content-Type": "application/json"},
             body=body,
         )
@@ -311,6 +338,143 @@ class ProviderClientTests(unittest.TestCase):
         self.assertTrue(parsed.path.endswith("/similar"))
         self.assertEqual(parse_qs(parsed.query)["intent"], ["efficient attention"])
         self.assertEqual(related["results"][0]["title"], PAPERS_RELATED_TITLE)
+
+    def test_reddit_search_token_then_listing(self) -> None:
+        transport = SequentialTransport(REDDIT_TOKEN_PAYLOAD, REDDIT_SEARCH_PAYLOAD)
+        out = reddit.search(
+            "python tutorial",
+            client_id="cid",
+            client_secret="csecret",
+            transport=transport,
+        )
+        self.assertEqual(len(transport.requests), 2)
+        token_req = transport.requests[0]
+        token_parsed = urlparse(token_req.url)
+        self.assertEqual(token_req.method, "POST")
+        self.assertEqual(token_parsed.hostname, "www.reddit.com")
+        self.assertEqual(token_parsed.path, "/api/v1/access_token")
+        self.assertEqual(
+            token_req.headers.get("Content-Type"),
+            "application/x-www-form-urlencoded",
+        )
+        self.assertTrue(
+            token_req.headers.get("Authorization", "").startswith("Basic ")
+        )
+        self.assertEqual(token_req.body, b"grant_type=client_credentials")
+        search_req = transport.requests[1]
+        search_parsed = urlparse(search_req.url)
+        self.assertEqual(search_req.method, "GET")
+        self.assertEqual(search_parsed.hostname, "oauth.reddit.com")
+        self.assertEqual(search_parsed.path, "/search")
+        self.assertEqual(
+            search_req.headers.get("Authorization"), f"Bearer {REDDIT_TOKEN}"
+        )
+        query = parse_qs(search_parsed.query)
+        self.assertEqual(query["q"], ["python tutorial"])
+        self.assertEqual(query["sort"], ["relevance"])
+        self.assertEqual(query["t"], ["all"])
+        hit = out["results"][0]
+        self.assertEqual(hit["title"], REDDIT_TITLE)
+        self.assertEqual(hit["url"], REDDIT_URL)
+        self.assertEqual(hit["link_url"], REDDIT_LINK_URL)
+        self.assertEqual(hit["subreddit"], "python")
+        self.assertEqual(hit["description"], REDDIT_SELFTEXT)
+
+    def test_reddit_search_subreddit_path_and_filters(self) -> None:
+        transport = SequentialTransport(REDDIT_TOKEN_PAYLOAD, REDDIT_SEARCH_PAYLOAD)
+        reddit.search(
+            "pandas",
+            client_id="cid",
+            client_secret="csecret",
+            sort="top",
+            time="week",
+            limit=10,
+            subreddit="r/python",
+            transport=transport,
+        )
+        parsed = urlparse(transport.requests[1].url)
+        self.assertEqual(parsed.path, "/r/python/search")
+        query = parse_qs(parsed.query)
+        self.assertEqual(query["q"], ["pandas"])
+        self.assertEqual(query["sort"], ["top"])
+        self.assertEqual(query["t"], ["week"])
+        self.assertEqual(query["limit"], ["10"])
+        self.assertEqual(query["restrict_sr"], ["true"])
+
+    def test_reddit_fixture_origin_uses_same_host_for_token(self) -> None:
+        transport = SequentialTransport(REDDIT_TOKEN_PAYLOAD, REDDIT_SEARCH_PAYLOAD)
+        reddit.search(
+            "q",
+            client_id="cid",
+            client_secret="csecret",
+            origin="http://127.0.0.1:9",
+            transport=transport,
+        )
+        self.assertEqual(
+            urlparse(transport.requests[0].url).hostname, "127.0.0.1"
+        )
+        self.assertEqual(
+            urlparse(transport.requests[1].url).hostname, "127.0.0.1"
+        )
+
+    def test_reddit_thread_comments_path_and_nested_bodies(self) -> None:
+        transport = SequentialTransport(REDDIT_TOKEN_PAYLOAD, REDDIT_THREAD_PAYLOAD)
+        out = reddit.thread(
+            "https://www.reddit.com/r/python/comments/abc123/fixture_post/",
+            client_id="cid",
+            client_secret="csecret",
+            sort="top",
+            limit=50,
+            transport=transport,
+        )
+        parsed = urlparse(transport.requests[1].url)
+        self.assertEqual(transport.requests[1].method, "GET")
+        self.assertEqual(parsed.path, f"/comments/{REDDIT_POST_ID}")
+        query = parse_qs(parsed.query)
+        self.assertEqual(query["sort"], ["top"])
+        self.assertEqual(query["limit"], ["50"])
+        hit = out["results"][0]
+        self.assertEqual(hit["id"], REDDIT_POST_ID)
+        self.assertEqual(hit["title"], REDDIT_TITLE)
+        self.assertEqual(hit["comments"][0]["body"], REDDIT_COMMENT_BODY)
+        self.assertEqual(hit["comments"][0]["depth"], 0)
+        self.assertEqual(hit["comments"][1]["body"], REDDIT_REPLY_BODY)
+        self.assertEqual(hit["comments"][1]["depth"], 1)
+
+    def test_reddit_thread_accepts_bare_and_t3_ids(self) -> None:
+        for target in ("abc123", "t3_abc123"):
+            transport = SequentialTransport(
+                REDDIT_TOKEN_PAYLOAD, REDDIT_THREAD_PAYLOAD
+            )
+            reddit.thread(
+                target,
+                client_id="cid",
+                client_secret="csecret",
+                transport=transport,
+            )
+            self.assertEqual(
+                urlparse(transport.requests[1].url).path, "/comments/abc123"
+            )
+
+    def test_reddit_subreddit_listing_path_and_time(self) -> None:
+        transport = SequentialTransport(REDDIT_TOKEN_PAYLOAD, REDDIT_SEARCH_PAYLOAD)
+        out = reddit.list_subreddit(
+            "r/python",
+            client_id="cid",
+            client_secret="csecret",
+            sort="top",
+            time="week",
+            limit=10,
+            transport=transport,
+        )
+        parsed = urlparse(transport.requests[1].url)
+        self.assertEqual(parsed.path, "/r/python/top")
+        query = parse_qs(parsed.query)
+        self.assertEqual(query["t"], ["week"])
+        self.assertEqual(query["limit"], ["10"])
+        self.assertEqual(out["operation"], "subreddit")
+        self.assertEqual(out["subreddit"], "python")
+        self.assertEqual(out["results"][0]["title"], REDDIT_TITLE)
 
 
 if __name__ == "__main__":

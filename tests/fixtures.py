@@ -168,6 +168,85 @@ PAPERS_RELATED_PAYLOAD = {
     "truncated": False,
 }
 
+REDDIT_TITLE = "Fixture Reddit Post"
+REDDIT_PERMALINK = "/r/python/comments/abc123/fixture_post/"
+REDDIT_URL = "https://www.reddit.com/r/python/comments/abc123/fixture_post/"
+REDDIT_LINK_URL = "https://example.com/article"
+REDDIT_SELFTEXT = "Fixture reddit selftext"
+REDDIT_TOKEN = "fixture-reddit-token"
+REDDIT_TOKEN_PAYLOAD = {
+    "access_token": REDDIT_TOKEN,
+    "token_type": "bearer",
+    "expires_in": 3600,
+    "scope": "*",
+}
+REDDIT_POST_ID = "abc123"
+REDDIT_SEARCH_PAYLOAD = {
+    "kind": "Listing",
+    "data": {
+        "children": [
+            {
+                "kind": "t3",
+                "data": {
+                    "id": REDDIT_POST_ID,
+                    "title": REDDIT_TITLE,
+                    "permalink": REDDIT_PERMALINK,
+                    "url": REDDIT_LINK_URL,
+                    "subreddit": "python",
+                    "author": "fixture_user",
+                    "score": 42,
+                    "num_comments": 7,
+                    "selftext": REDDIT_SELFTEXT,
+                    "created_utc": 1700000000.0,
+                },
+            }
+        ]
+    },
+}
+
+REDDIT_COMMENT_BODY = "Fixture reddit comment about CRISPR."
+REDDIT_REPLY_BODY = "Fixture nested reply"
+REDDIT_THREAD_PAYLOAD = [
+    REDDIT_SEARCH_PAYLOAD,
+    {
+        "kind": "Listing",
+        "data": {
+            "children": [
+                {
+                    "kind": "t1",
+                    "data": {
+                        "id": "cmt456",
+                        "author": "commenter",
+                        "body": REDDIT_COMMENT_BODY,
+                        "score": 11,
+                        "created_utc": 1700000100.0,
+                        "permalink": "/r/python/comments/abc123/fixture_post/cmt456/",
+                        "replies": {
+                            "kind": "Listing",
+                            "data": {
+                                "children": [
+                                    {
+                                        "kind": "t1",
+                                        "data": {
+                                            "id": "cmt789",
+                                            "author": "replier",
+                                            "body": REDDIT_REPLY_BODY,
+                                            "score": 3,
+                                            "created_utc": 1700000200.0,
+                                            "permalink": "/r/python/comments/abc123/fixture_post/cmt789/",
+                                            "replies": "",
+                                        },
+                                    }
+                                ]
+                            },
+                        },
+                    },
+                }
+            ]
+        },
+    },
+]
+
 _POST_ROUTES = {
     "/api/mcp-search": BGPT_PAYLOAD,
     "/search": EXA_SEARCH_PAYLOAD,
@@ -175,6 +254,7 @@ _POST_ROUTES = {
     "/v2/scrape": FIRECRAWL_SCRAPE_PAYLOAD,
     "/v2/search": FIRECRAWL_SEARCH_PAYLOAD,
     "/v2/map": FIRECRAWL_MAP_PAYLOAD,
+    "/api/v1/access_token": REDDIT_TOKEN_PAYLOAD,
 }
 
 
@@ -204,6 +284,21 @@ class FixtureHandler(BaseHTTPRequestHandler):
             return
         if path == "/res/v1/llm/context":
             self._send(200, BRAVE_LLM_PAYLOAD)
+            return
+        if path == "/search" or path.endswith("/search"):
+            self._send(200, REDDIT_SEARCH_PAYLOAD)
+            return
+        if "/comments/" in path:
+            self._send(200, REDDIT_THREAD_PAYLOAD)
+            return
+        if path.startswith("/r/") and path.rsplit("/", 1)[-1] in {
+            "hot",
+            "new",
+            "top",
+            "rising",
+            "controversial",
+        }:
+            self._send(200, REDDIT_SEARCH_PAYLOAD)
             return
         if path == "/v2/search/research/papers":
             self._send(200, PAPERS_SEARCH_PAYLOAD)

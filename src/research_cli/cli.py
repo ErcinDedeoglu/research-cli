@@ -17,15 +17,17 @@ from research_cli.keys import (
     require_brave_key,
     require_exa_key,
     require_firecrawl_key,
+    require_reddit_credentials,
 )
-from research_cli.providers import bgpt, brave, exa, firecrawl
+from research_cli.providers import bgpt, brave, exa, firecrawl, reddit
 from research_cli.providers import firecrawl_papers as papers
 from research_cli.update import run_self_update, spawn_background_update
 
 DESCRIPTION = (
     "Agent-facing research CLI. Direct HTTP REST calls for bgpt paper search, "
-    "brave search / llm-context, exa search/contents, and firecrawl "
-    "scrape/search/map/papers. Do not use MCP; run this CLI."
+    "brave search / llm-context, exa search/contents, firecrawl "
+    "scrape/search/map/papers, and reddit search/thread/subreddit. "
+    "Do not use MCP; run this CLI."
 )
 
 EPILOG = """\
@@ -34,6 +36,7 @@ providers:
   brave         brave search web results and llm-context
   exa           Exa semantic search and page contents/fetch
   firecrawl     Firecrawl scrape, search, map, and research papers
+  reddit        Reddit post search, thread comments, and subreddit listings (OAuth)
 
 examples:
   research-cli bgpt search "CRISPR delivery neurons"
@@ -48,6 +51,9 @@ examples:
   research-cli firecrawl papers inspect arxiv:1706.03762
   research-cli firecrawl papers read arxiv:1706.03762 --question "what is the architecture?"
   research-cli firecrawl papers related arxiv:1706.03762 --intent "efficient attention"
+  research-cli reddit search "CRISPR neurons" --sort top --time week
+  research-cli reddit thread abc123 --sort top --limit 50
+  research-cli reddit subreddit rust --sort top --time week
 """
 
 
@@ -208,6 +214,72 @@ def build_parser() -> argparse.ArgumentParser:
     p_related.add_argument("--mode", default="similar", choices=("similar", "citers", "references"))
     p_related.add_argument("--k", type=int, default=40)
     p_related.add_argument("--anchors", default=None)
+
+    reddit_p = sub.add_parser(
+        "reddit", help="Reddit post search, threads, and subreddit listings"
+    )
+    reddit_sub = reddit_p.add_subparsers(dest="operation", required=True)
+    reddit_search = reddit_sub.add_parser(
+        "search", help="Search posts via Reddit", parents=[shared]
+    )
+    reddit_search.add_argument("query", help="Search terms")
+    reddit_search.add_argument(
+        "--sort",
+        default="relevance",
+        choices=("relevance", "hot", "top", "new", "comments"),
+    )
+    reddit_search.add_argument(
+        "--time",
+        default="all",
+        choices=("hour", "day", "week", "month", "year", "all"),
+        help="Time window (Reddit t=)",
+    )
+    reddit_search.add_argument("--limit", type=int, default=25)
+    reddit_search.add_argument(
+        "--subreddit",
+        default=None,
+        help="Limit search to one subreddit (without r/)",
+    )
+    reddit_thread = reddit_sub.add_parser(
+        "thread",
+        help="Read a post and its comments",
+        parents=[shared],
+    )
+    reddit_thread.add_argument(
+        "target", help="Post ID, t3_ ID, or Reddit comments URL"
+    )
+    reddit_thread.add_argument(
+        "--sort",
+        default="best",
+        choices=("best", "top", "new", "controversial", "old", "qa"),
+    )
+    reddit_thread.add_argument("--limit", type=int, default=50)
+    reddit_thread.add_argument(
+        "--depth",
+        type=int,
+        default=None,
+        help="Comment tree depth (Reddit depth=)",
+    )
+    reddit_listing = reddit_sub.add_parser(
+        "subreddit",
+        help="List posts in a subreddit",
+        parents=[shared],
+    )
+    reddit_listing.add_argument(
+        "name", help="Subreddit name (without r/)"
+    )
+    reddit_listing.add_argument(
+        "--sort",
+        default="hot",
+        choices=("hot", "new", "top", "rising", "controversial"),
+    )
+    reddit_listing.add_argument(
+        "--time",
+        default="all",
+        choices=("hour", "day", "week", "month", "year", "all"),
+        help="Time window for top/controversial (Reddit t=)",
+    )
+    reddit_listing.add_argument("--limit", type=int, default=25)
     return parser
 
 
@@ -319,6 +391,54 @@ def _dispatch_firecrawl(
     raise ValueError(f"unknown command: firecrawl {args.operation}")
 
 
+def _dispatch_reddit(
+    args: argparse.Namespace,
+    environ: Mapping[str, str],
+    transport: Transport | None,
+    timeout: float,
+) -> dict[str, Any]:
+    origin = _origin(args, environ, reddit.DEFAULT_ORIGIN)
+    client_id, client_secret = require_reddit_credentials(environ)
+    if args.operation == "search":
+        return reddit.search(
+            args.query,
+            client_id=client_id,
+            client_secret=client_secret,
+            sort=args.sort,
+            time=args.time,
+            limit=args.limit,
+            subreddit=args.subreddit,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if args.operation == "thread":
+        return reddit.thread(
+            args.target,
+            client_id=client_id,
+            client_secret=client_secret,
+            sort=args.sort,
+            limit=args.limit,
+            depth=args.depth,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if args.operation == "subreddit":
+        return reddit.list_subreddit(
+            args.name,
+            client_id=client_id,
+            client_secret=client_secret,
+            sort=args.sort,
+            time=args.time,
+            limit=args.limit,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    raise ValueError(f"unknown command: reddit {args.operation}")
+
+
 def _dispatch(
     args: argparse.Namespace,
     environ: Mapping[str, str],
@@ -385,6 +505,8 @@ def _dispatch(
         )
     if args.provider == "firecrawl":
         return _dispatch_firecrawl(args, environ, transport, timeout)
+    if args.provider == "reddit":
+        return _dispatch_reddit(args, environ, transport, timeout)
     raise ValueError(f"unknown command: {args.provider} {getattr(args, 'operation', '')}")
 
 

@@ -28,6 +28,8 @@ from fixtures import (  # noqa: E402
     PAPER_PASSAGE,
     PAPER_TITLE,
     PAPERS_RELATED_TITLE,
+    REDDIT_COMMENT_BODY,
+    REDDIT_TITLE,
     start_fixture_server,
 )
 
@@ -37,6 +39,8 @@ _KEY_VARS = (
     "BRAVE_SEARCH_API_KEY",
     "EXA_API_KEY",
     "FIRECRAWL_API_KEY",
+    "REDDIT_CLIENT_ID",
+    "REDDIT_CLIENT_SECRET",
     "RESEARCH_CLI_BASE_URL",
     "RESEARCH_CLI_NO_UPDATE",
     "RESEARCH_CLI_CACHE_DIR",
@@ -70,7 +74,7 @@ def _run_module(*args: str, env: dict[str, str] | None = None) -> subprocess.Com
 
 
 class HelpTests(unittest.TestCase):
-    def test_help_twice_names_four_providers(self) -> None:
+    def test_help_twice_names_five_providers(self) -> None:
         runs = [_run_module("--help") for _ in range(2)]
         for proc in runs:
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -80,6 +84,7 @@ class HelpTests(unittest.TestCase):
         self.assertIn("brave search", text)
         self.assertIn("exa", text)
         self.assertIn("firecrawl", text)
+        self.assertIn("reddit", text)
         self.assertIn("--self-update", text)
 
     def test_version_prints_package_version(self) -> None:
@@ -106,6 +111,9 @@ class MissingKeyTests(unittest.TestCase):
             (["brave", "llm-context", "q"], "brave"),
             (["firecrawl", "map", "https://example.com"], "firecrawl"),
             (["firecrawl", "papers", "search", "q"], "firecrawl"),
+            (["reddit", "search", "q"], "reddit"),
+            (["reddit", "thread", "abc123"], "reddit"),
+            (["reddit", "subreddit", "python"], "reddit"),
         ]
         empty = {}
         for argv, provider in cases:
@@ -142,6 +150,8 @@ class FixtureServerCliTests(unittest.TestCase):
                 "BRAVE_API_KEY": "fixture-brave",
                 "EXA_API_KEY": "fixture-exa",
                 "FIRECRAWL_API_KEY": "fixture-firecrawl",
+                "REDDIT_CLIENT_ID": "fixture-reddit-id",
+                "REDDIT_CLIENT_SECRET": "fixture-reddit-secret",
             }
         )
 
@@ -153,12 +163,13 @@ class FixtureServerCliTests(unittest.TestCase):
     def _cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return _run_module("--base-url", self.base, *args, env=self.env)
 
-    def test_four_providers_twice_emit_fixture_fields(self) -> None:
+    def test_five_providers_twice_emit_fixture_fields(self) -> None:
         commands = [
             (["bgpt", "search", "CRISPR"], BGPT_TITLE),
             (["brave", "search", "rust"], BRAVE_URL),
             (["exa", "search", "llm"], EXA_SEARCH_URL),
             (["firecrawl", "search", "scraping"], FIRECRAWL_SEARCH_URL),
+            (["reddit", "search", "python"], REDDIT_TITLE),
         ]
         for _ in range(2):
             for args, needle in commands:
@@ -202,6 +213,8 @@ class FixtureServerCliTests(unittest.TestCase):
                 ["firecrawl", "papers", "related", "arxiv:2105.05233", "--intent", "attention"],
                 PAPERS_RELATED_TITLE,
             ),
+            (["reddit", "thread", "abc123", "--sort", "top"], REDDIT_COMMENT_BODY),
+            (["reddit", "subreddit", "python", "--sort", "top", "--time", "week"], REDDIT_TITLE),
         ]
         for args, needle in cases:
             proc = self._cli(*args)

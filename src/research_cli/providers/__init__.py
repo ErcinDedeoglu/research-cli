@@ -1,1 +1,1 @@
-"""HTTP provider clients for BGPT, Brave Search, Exa, and Firecrawl."""
+"""HTTP provider clients for BGPT, Brave Search, Exa, Firecrawl, and Reddit."""

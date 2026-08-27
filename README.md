@@ -1,6 +1,6 @@
 # research-cli
 
-Agent-facing CLI that searches papers and the web by calling **BGPT**, **Brave Search**, **Exa**, and **Firecrawl** HTTP APIs directly (not MCP).
+Agent-facing CLI that searches papers and the web by calling **BGPT**, **Brave Search**, **Exa**, **Firecrawl**, and **Reddit** HTTP APIs directly (not MCP).
 
 Agents should follow [`skills/research-cli/SKILL.md`](skills/research-cli/SKILL.md).
 
