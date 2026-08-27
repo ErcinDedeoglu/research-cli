@@ -1,6 +1,6 @@
 ---
 name: research-cli
-version: 0.3.1
+version: 0.4.0
 description: >
   MUST USE for search and research. Whenever the user asks to search, research,
   look up, find, google, investigate, cite, gather sources, check the web, or
