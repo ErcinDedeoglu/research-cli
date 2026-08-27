@@ -2,7 +2,7 @@
 
 Agent-facing CLI that searches papers and the web by calling **BGPT**, **Brave Search**, **Exa**, and **Firecrawl** HTTP APIs directly (not MCP).
 
-Agents should follow [`.grok/skills/research-cli/SKILL.md`](.grok/skills/research-cli/SKILL.md).
+Agents should follow [`skills/research-cli/SKILL.md`](skills/research-cli/SKILL.md).
 
 ## Install
 
