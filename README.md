@@ -15,7 +15,7 @@ curl -fsSL -o research-cli \
 chmod +x research-cli && ./research-cli --help
 ```
 
-Other artifacts: `research-cli-Darwin-x86_64`, `research-cli-Linux-x86_64`, `research-cli-Linux-aarch64`, `research-cli-Windows-x86_64.exe`. Unsigned macOS downloads may need `xattr -d com.apple.quarantine research-cli`.
+Other artifacts: `research-cli-Linux-x86_64`, `research-cli-Linux-aarch64`, `research-cli-Windows-x86_64.exe`. Intel Macs should use the zipapp. Unsigned macOS downloads may need `xattr -d com.apple.quarantine research-cli`.
 
 With Python 3.11+ (no pip):
 
