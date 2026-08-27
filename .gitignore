@@ -3,6 +3,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+/research-cli.spec
 .venv/
 .pytest_cache/
 .mypy_cache/

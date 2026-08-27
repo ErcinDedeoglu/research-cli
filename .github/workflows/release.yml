@@ -1,0 +1,91 @@
+name: Release binaries
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  zipapp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build zipapp
+        run: bash scripts/build-zipapp.sh dist
+      - name: Smoke zipapp
+        run: python dist/research-cli.pyz --help
+      - uses: actions/upload-artifact@v4
+        with:
+          name: research-cli-pyz
+          path: dist/research-cli.pyz
+
+  freeze:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            artifact: research-cli-Darwin-arm64
+          - os: macos-13
+            artifact: research-cli-Darwin-x86_64
+          - os: ubuntu-latest
+            artifact: research-cli-Linux-x86_64
+          - os: ubuntu-24.04-arm
+            artifact: research-cli-Linux-aarch64
+          - os: windows-latest
+            artifact: research-cli-Windows-x86_64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+      - name: Freeze
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --name research-cli --paths src --collect-submodules research_cli src/research_cli/__main__.py
+      - name: Name artifact (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist/release
+          mv dist/research-cli "dist/release/${{ matrix.artifact }}"
+          chmod +x "dist/release/${{ matrix.artifact }}"
+          "./dist/release/${{ matrix.artifact }}" --help
+      - name: Name artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/release | Out-Null
+          Move-Item dist/research-cli.exe "dist/release/${{ matrix.artifact }}"
+          & "dist/release/${{ matrix.artifact }}" --help
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/release/${{ matrix.artifact }}
+
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: [zipapp, freeze]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          files=(artifacts/*)
+          gh release create "${GITHUB_REF_NAME}" "${files[@]}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes

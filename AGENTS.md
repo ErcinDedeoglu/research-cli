@@ -17,6 +17,7 @@
 | Help | `python -m research_cli --help` | <1s |
 | Tests | `PYTHONPATH=src python -m unittest discover -s tests -v` | ~2s |
 | Skill alignment | `PYTHONPATH=src python -m unittest tests.test_skill -v` | <1s |
+| Zipapp | `bash scripts/build-zipapp.sh dist` | ~1s |
 
 After install, `research-cli` is the same entry as `python -m research_cli`. Load keys from `.env` (gitignored); copy `.env.example`.
 
@@ -37,6 +38,9 @@ tests/test_providers.py              → injectable HTTP: method/path/auth/parse
 tests/test_cli.py                    → --help, missing keys, fixture-server CLI
 tests/fixtures.py                    → fixture JSON + local HTTP server
 .env.example                         → placeholder keys
+.github/workflows/ci.yml             → unittest on Python 3.11/3.12
+.github/workflows/release.yml        → PyInstaller binaries + zipapp on v* tags
+scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
 ```
 
 ## Golden Samples

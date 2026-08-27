@@ -6,15 +6,37 @@ Agents should follow [`skills/research-cli/SKILL.md`](skills/research-cli/SKILL.
 
 ## Install
 
+Binaries (no Python on the machine) from [Releases](https://github.com/ErcinDedeoglu/research-cli/releases):
+
 ```bash
-pip install -e .
+# macOS Apple Silicon
+curl -fsSL -o research-cli \
+  https://github.com/ErcinDedeoglu/research-cli/releases/latest/download/research-cli-Darwin-arm64
+chmod +x research-cli && ./research-cli --help
+```
+
+Other artifacts: `research-cli-Darwin-x86_64`, `research-cli-Linux-x86_64`, `research-cli-Linux-aarch64`, `research-cli-Windows-x86_64.exe`. Unsigned macOS downloads may need `xattr -d com.apple.quarantine research-cli`.
+
+With Python 3.11+ (no pip):
+
+```bash
+curl -fsSL -o research-cli.pyz \
+  https://github.com/ErcinDedeoglu/research-cli/releases/latest/download/research-cli.pyz
+python3 research-cli.pyz --help
+```
+
+With pip:
+
+```bash
+pip install "git+https://github.com/ErcinDedeoglu/research-cli.git"
 research-cli --help
 ```
 
-Or from a checkout:
+From a checkout:
 
 ```bash
-PYTHONPATH=src python -m research_cli --help
+pip install -e .
+# or: PYTHONPATH=src python -m research_cli --help
 ```
 
 ## Providers
