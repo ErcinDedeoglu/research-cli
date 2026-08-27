@@ -161,7 +161,7 @@ jobs:
           else
             gh release create "$TAG" "${files[@]}" \
               --repo "${GITHUB_REPOSITORY}" \
-              --target "$TAG" \
+              --verify-tag \
               --title "research-cli ${TAG}" \
               --notes "$notes" \
               --latest
