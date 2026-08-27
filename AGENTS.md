@@ -35,7 +35,7 @@ src/research_cli/providers/brave.py  → GET web/search, GET llm/context
 src/research_cli/providers/exa.py    → POST /search, POST /contents
 src/research_cli/providers/firecrawl.py → scrape, search, map
 src/research_cli/providers/firecrawl_papers.py → papers search/inspect/read/related
-skills/research-cli/SKILL.md         → agent playbook (not under .grok/)
+skills/research-cli/SKILL.md         → agent playbook (not under .grok/; copy to kenopahq/skills/research-cli on change)
 tests/test_skill.py                  → skill ↔ CLI parser/keys alignment
 tests/test_providers.py              → injectable HTTP: method/path/auth/parse
 tests/test_cli.py                    → --help, missing keys, fixture-server CLI
@@ -94,7 +94,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | When | Do |
 |------|-----|
 | Agent needs papers/web/scrape | Point at `skills/research-cli/SKILL.md` and the CLI — do not call vendor MCP servers |
-| Add/change a CLI command or flag | Update provider + `cli.py` + skill examples + `tests/test_skill.py` in the same change |
+| Add/change a CLI command or flag | Update provider + `cli.py` + skill examples + `tests/test_skill.py` in the same change, then copy `skills/research-cli/SKILL.md` to `/Users/ercin/git/github/kenopahq/skills/research-cli/` |
 | Add a provider HTTP path | Injectable `transport`; assert method, host/path, auth header, parsed fields |
 | Skill vs `--help` disagree | Code and skill both wrong until `test_skill` is green |
 | Need live keys | `.env` locally; never commit it |
