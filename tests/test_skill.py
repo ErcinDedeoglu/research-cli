@@ -185,6 +185,7 @@ class SkillFileTests(unittest.TestCase):
                 f"SKILL.md must document env var {name} (from keys.py)",
             )
         self.assertIn("brave search", self.text.lower())
+        self.assertIn(".config/research-cli/env", self.text)
         example = ENV_EXAMPLE.read_text(encoding="utf-8")
         for name in ("BRAVE_API_KEY", "EXA_API_KEY", "FIRECRAWL_API_KEY", "BGPT_API_KEY"):
             self.assertIn(name, example)

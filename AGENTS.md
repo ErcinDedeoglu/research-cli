@@ -21,7 +21,7 @@
 | Self-update (source/pip) | `python -m research_cli --self-update` | <1s |
 | Next SemVer | `python scripts/semver.py next` | <1s |
 
-After install, `research-cli` is the same entry as `python -m research_cli`. Load keys from `.env` (gitignored); copy `.env.example`.
+After install, `research-cli` is the same entry as `python -m research_cli`. Keys: process env, else `~/.config/research-cli/env` (loaded by the CLI). Repo `.env` is gitignored and is **not** auto-loaded; copy `.env.example` into the config file or export it.
 
 ## File Map
 

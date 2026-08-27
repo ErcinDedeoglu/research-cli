@@ -41,6 +41,8 @@ _KEY_VARS = (
     "RESEARCH_CLI_CACHE_DIR",
     "RESEARCH_CLI_REPO",
     "RESEARCH_CLI_GITHUB_API",
+    "RESEARCH_CLI_ENV_FILE",
+    "RESEARCH_CLI_NO_ENV_FILE",
 )
 
 
@@ -51,6 +53,7 @@ def _clean_env() -> dict[str, str]:
     env["PYTHONPATH"] = str(SRC)
     env["PYTHONIOENCODING"] = "utf-8"
     env["RESEARCH_CLI_NO_UPDATE"] = "1"
+    env["RESEARCH_CLI_NO_ENV_FILE"] = "1"
     return env
 
 

@@ -43,6 +43,19 @@ chmod +x "$HOME/.local/bin/research-cli"
 
 Windows: `$base/research-cli-Windows-x86_64.exe` → `research-cli.exe` on PATH. macOS quarantine: `xattr -d com.apple.quarantine "$HOME/.local/bin/research-cli"`.
 
+## Keys
+
+After install, write `$HOME/.config/research-cli/env` (Windows: `%APPDATA%\research-cli\env`). Process env overrides the file. If a required key is missing, ask the user and write it, then run search.
+
+```
+BRAVE_API_KEY=
+EXA_API_KEY=
+FIRECRAWL_API_KEY=
+# BGPT_API_KEY=
+```
+
+chmod 600 the file.
+
 ## Search / research
 
 On search or research, run **all** of these in parallel with the same query. Do not pick one provider.

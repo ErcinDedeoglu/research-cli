@@ -11,6 +11,8 @@ from research_cli import __version__
 from research_cli.errors import MissingKeyError, ProviderHttpError, UpdateError
 from research_cli.http import Transport
 from research_cli.keys import (
+    default_env_path,
+    load_provider_keys,
     optional_bgpt_key,
     require_brave_key,
     require_exa_key,
@@ -409,7 +411,7 @@ def main(
     spawn_update: Callable[[Mapping[str, str]], None] | None = None,
 ) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    environ = os.environ if environ is None else environ
+    environ = load_provider_keys(os.environ) if environ is None else environ
     stdout = sys.stdout if stdout is None else stdout
     stderr = sys.stderr if stderr is None else stderr
     if "--self-update" in argv:
@@ -431,6 +433,7 @@ def main(
         result = _dispatch(args, environ, transport)
     except MissingKeyError as exc:
         print(f"error: {exc}", file=stderr)
+        print(f"write keys to {default_env_path(environ)}", file=stderr)
         code = 2
     except ProviderHttpError as exc:
         print(f"error: {exc}", file=stderr)

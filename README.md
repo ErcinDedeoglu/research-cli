@@ -58,7 +58,7 @@ Every push to `main` bumps **SemVer** (`vMAJOR.MINOR.PATCH`) from conventional c
 | `research-cli firecrawl papers read ID --question Q` | `GET .../papers/{id}?query=` | `FIRECRAWL_API_KEY` |
 | `research-cli firecrawl papers related ID --intent T` | `GET .../papers/{id}/similar` | `FIRECRAWL_API_KEY` |
 
-`--base-url` replaces the API origin (for fixture servers). JSON is written to stdout.
+`--base-url` replaces the API origin (for fixture servers). JSON is written to stdout. API keys: environment variables, or `$HOME/.config/research-cli/env` (see `.env.example`).
 
 ## Tests
 
