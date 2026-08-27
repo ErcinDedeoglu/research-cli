@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import subprocess
 import sys
@@ -35,6 +36,10 @@ _KEY_VARS = (
     "EXA_API_KEY",
     "FIRECRAWL_API_KEY",
     "RESEARCH_CLI_BASE_URL",
+    "RESEARCH_CLI_NO_UPDATE",
+    "RESEARCH_CLI_CACHE_DIR",
+    "RESEARCH_CLI_REPO",
+    "RESEARCH_CLI_GITHUB_API",
 )
 
 
@@ -44,6 +49,7 @@ def _clean_env() -> dict[str, str]:
         env.pop(name, None)
     env["PYTHONPATH"] = str(SRC)
     env["PYTHONIOENCODING"] = "utf-8"
+    env["RESEARCH_CLI_NO_UPDATE"] = "1"
     return env
 
 
@@ -69,6 +75,19 @@ class HelpTests(unittest.TestCase):
         self.assertIn("brave search", text)
         self.assertIn("exa", text)
         self.assertIn("firecrawl", text)
+        self.assertIn("--self-update", text)
+
+    def test_version_prints_package_version(self) -> None:
+        proc = _run_module("--version")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("0.1.0", proc.stdout)
+
+    def test_self_update_source_is_json(self) -> None:
+        proc = _run_module("--self-update")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["status"], "unsupported")
+        self.assertIn("pip install", payload["hint"])
 
 
 class MissingKeyTests(unittest.TestCase):

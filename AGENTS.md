@@ -1,5 +1,5 @@
 <!-- FOR AI AGENTS - Human readability is a side effect, not a goal -->
-<!-- Last updated: 2026-08-27 | Last verified: 2026-08-27 -->
+<!-- Last updated: 2026-08-28 | Last verified: 2026-08-28 -->
 
 # AGENTS.md
 
@@ -18,6 +18,7 @@
 | Tests | `PYTHONPATH=src python -m unittest discover -s tests -v` | ~2s |
 | Skill alignment | `PYTHONPATH=src python -m unittest tests.test_skill -v` | <1s |
 | Zipapp | `bash scripts/build-zipapp.sh dist` | ~1s |
+| Self-update (source/pip) | `python -m research_cli --self-update` | <1s |
 
 After install, `research-cli` is the same entry as `python -m research_cli`. Load keys from `.env` (gitignored); copy `.env.example`.
 
@@ -25,6 +26,7 @@ After install, `research-cli` is the same entry as `python -m research_cli`. Loa
 
 ```
 src/research_cli/cli.py              → argparse + dispatch
+src/research_cli/update.py           → GitHub Releases self-update (frozen/zipapp)
 src/research_cli/http.py             → HttpRequest/Response, urllib transport
 src/research_cli/keys.py             → env keys / MissingKeyError
 src/research_cli/providers/bgpt.py   → POST /api/mcp-search
@@ -36,10 +38,11 @@ skills/research-cli/SKILL.md         → agent playbook (not under .grok/)
 tests/test_skill.py                  → skill ↔ CLI parser/keys alignment
 tests/test_providers.py              → injectable HTTP: method/path/auth/parse
 tests/test_cli.py                    → --help, missing keys, fixture-server CLI
+tests/test_update.py                 → version compare, assets, replace, background spawn, --self-update
 tests/fixtures.py                    → fixture JSON + local HTTP server
 .env.example                         → placeholder keys
 .github/workflows/ci.yml             → unittest on Python 3.11/3.12
-.github/workflows/release.yml        → PyInstaller binaries + zipapp on v* tags
+.github/workflows/release.yml        → test + freeze + GitHub Release on every main commit
 scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
 ```
 
@@ -62,6 +65,7 @@ scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
 | Skill vs `--help` disagree | Code and skill both wrong until `test_skill` is green |
 | Need live keys | `.env` locally; never commit it |
 | Adding a Python dependency | Ask first — stdlib HTTP only unless asked |
+| Change freeze/zipapp artifact names | Keep `asset_name()` in `update.py` in lockstep with `.github/workflows/release.yml` |
 
 ## Boundaries
 
@@ -88,5 +92,8 @@ scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
 | Provider | One HTTP backend: bgpt, brave, exa, firecrawl |
 | `--base-url` | Override API origin (fixture tests), not a vendor path |
 | `--live` | Firecrawl scrape `maxAge=0` |
+| `--self-update` | Foreground GitHub latest-release replace (always download matching asset) |
+| Background update | After each dispatched command, frozen/zipapp spawn detached `--self-update` (waits for parent exit; does not block stdout) |
+| `RESEARCH_CLI_NO_UPDATE` | Disables the post-command spawn; `--self-update` still runs |
 | llm-context | Brave `GET /res/v1/llm/context` — page chunks, not titles-only |
 | papers | Firecrawl research index (`/v2/search/research/papers`), not BGPT |

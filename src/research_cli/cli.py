@@ -4,10 +4,11 @@ import argparse
 import json
 import os
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, TextIO
 
-from research_cli.errors import MissingKeyError, ProviderHttpError
+from research_cli import __version__
+from research_cli.errors import MissingKeyError, ProviderHttpError, UpdateError
 from research_cli.http import Transport
 from research_cli.keys import (
     optional_bgpt_key,
@@ -17,6 +18,7 @@ from research_cli.keys import (
 )
 from research_cli.providers import bgpt, brave, exa, firecrawl
 from research_cli.providers import firecrawl_papers as papers
+from research_cli.update import run_self_update, spawn_background_update
 
 DESCRIPTION = (
     "Agent-facing research CLI. Direct HTTP REST calls for bgpt paper search, "
@@ -78,6 +80,16 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         parents=[shared],
+    )
+    parser.add_argument(
+        "--self-update",
+        action="store_true",
+        help="Replace this frozen binary or zipapp with the latest GitHub release",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"research-cli {__version__}",
     )
     sub = parser.add_subparsers(dest="provider", required=True)
 
@@ -374,6 +386,19 @@ def _dispatch(
     raise ValueError(f"unknown command: {args.provider} {getattr(args, 'operation', '')}")
 
 
+def _schedule_update(
+    environ: Mapping[str, str],
+    spawn_update: Callable[[Mapping[str, str]], None] | None,
+) -> None:
+    try:
+        if spawn_update is not None:
+            spawn_update(environ)
+            return
+        spawn_background_update(environ=environ)
+    except Exception:
+        return
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -381,27 +406,43 @@ def main(
     transport: Transport | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
+    spawn_update: Callable[[Mapping[str, str]], None] | None = None,
 ) -> int:
     argv = sys.argv[1:] if argv is None else argv
     environ = os.environ if environ is None else environ
     stdout = sys.stdout if stdout is None else stdout
     stderr = sys.stderr if stderr is None else stderr
+    if "--self-update" in argv:
+        try:
+            payload = run_self_update(environ=environ, transport=transport)
+        except UpdateError as exc:
+            print(f"error: {exc}", file=stderr)
+            return 1
+        _emit(payload, stdout)
+        return 0
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         code = exc.code
         return 0 if code is None else int(code)
+    code = 0
     try:
         result = _dispatch(args, environ, transport)
     except MissingKeyError as exc:
         print(f"error: {exc}", file=stderr)
-        return 2
+        code = 2
     except ProviderHttpError as exc:
         print(f"error: {exc}", file=stderr)
-        return 1
-    _emit(result, stdout)
-    return 0
+        code = 1
+    else:
+        _emit(result, stdout)
+        try:
+            stdout.flush()
+        except Exception:
+            pass
+    _schedule_update(environ, spawn_update)
+    return code
 
 
 def run() -> None:

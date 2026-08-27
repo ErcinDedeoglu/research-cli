@@ -15,3 +15,7 @@ class ProviderHttpError(Exception):
         if len(snippet) > 2000:
             snippet = snippet[:2000] + "…"
         super().__init__(f"{provider} HTTP {status}: {snippet}")
+
+
+class UpdateError(Exception):
+    """Raised when an explicit --self-update cannot finish."""
