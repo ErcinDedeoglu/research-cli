@@ -22,28 +22,56 @@ Deployed copy: kenopahq/skills/research-cli. Keep them in lockstep.
 
 Frontmatter `version:` must match the binary. Do not use a mismatched copy silently.
 
-1. Binary version: `research-cli --version` prints `research-cli X.Y.Z` (checkout: `python -m research_cli --version`). If the binary is missing, install it first.
-2. Compare X.Y.Z to `version:` above.
-3. **Skill older** (frontmatter < binary): overwrite the file you loaded with the canonical skill from GitHub:
+1. Detect the binary (`command -v research-cli`). If it is missing, **install it** using [Install if missing](#install-if-missing), then continue.
+2. Binary version: `research-cli --version` prints `research-cli X.Y.Z` (checkout: `python -m research_cli --version`).
+3. Compare X.Y.Z to `version:` above.
+4. **Skill older** (frontmatter < binary): overwrite the file you loaded with the canonical skill from GitHub:
    `https://raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md`
    If this copy is in kenopahq/skills or an agent skills dir, write that path.
-4. **Binary older** (binary < frontmatter): frozen/zipapp — --self-update (also runs in the background after a command). pip — reinstall `git+https://github.com/ErcinDedeoglu/research-cli.git`.
-5. **Equal:** run research commands.
+5. **Binary older** (binary < frontmatter): frozen/zipapp — --self-update (also runs in the background after a command). pip — reinstall `git+https://github.com/ErcinDedeoglu/research-cli.git`.
+6. **Equal:** run research commands.
 
-## Install (if `research-cli` is missing)
+## Install if missing
 
-Prefer a frozen binary from [Releases](https://github.com/ErcinDedeoglu/research-cli/releases/latest) (no Python):
+Do this whenever `command -v research-cli` fails (and you are not in a checkout where `PYTHONPATH=src python -m research_cli` works). Prefer a frozen binary (no Python). Put it on `PATH` (`$HOME/.local/bin` does not need root).
 
 ```bash
+command -v research-cli
+
+mkdir -p "$HOME/.local/bin"
+# add to PATH for this session if needed:
+# export PATH="$HOME/.local/bin:$PATH"
+
+base="https://github.com/ErcinDedeoglu/research-cli/releases/latest/download"
+
 # macOS Apple Silicon
-curl -fsSL -o research-cli \
-  https://github.com/ErcinDedeoglu/research-cli/releases/latest/download/research-cli-Darwin-arm64
-chmod +x research-cli
+curl -fsSL -o "$HOME/.local/bin/research-cli" "$base/research-cli-Darwin-arm64"
+chmod +x "$HOME/.local/bin/research-cli"
+
+# Linux x86_64
+curl -fsSL -o "$HOME/.local/bin/research-cli" "$base/research-cli-Linux-x86_64"
+chmod +x "$HOME/.local/bin/research-cli"
+
+# Linux ARM (aarch64 / arm64)
+curl -fsSL -o "$HOME/.local/bin/research-cli" "$base/research-cli-Linux-aarch64"
+chmod +x "$HOME/.local/bin/research-cli"
+
+# Windows (PowerShell or Git Bash) — save as research-cli.exe on PATH
+curl -fsSL -o research-cli.exe "$base/research-cli-Windows-x86_64.exe"
+
+# Intel Mac, or any OS with Python 3.11+ and no matching frozen binary
+curl -fsSL -o "$HOME/.local/bin/research-cli.pyz" "$base/research-cli.pyz"
+# run: python3 "$HOME/.local/bin/research-cli.pyz"
+
+# pip (Python 3.11+)
+pip install "git+https://github.com/ErcinDedeoglu/research-cli.git"
+
+# from a checkout of ErcinDedeoglu/research-cli
+pip install -e .
+# or: PYTHONPATH=src python -m research_cli
 ```
 
-Other artifacts: `research-cli-Linux-x86_64`, `research-cli-Linux-aarch64`, `research-cli-Windows-x86_64.exe`. Intel Macs: zipapp. Unsigned macOS: `xattr -d com.apple.quarantine research-cli`.
-
-Python 3.11+ without pip: `research-cli.pyz` from the same latest-release URL. pip: `pip install "git+https://github.com/ErcinDedeoglu/research-cli.git"`. Checkout: `pip install -e .` or `PYTHONPATH=src python -m research_cli`. Frozen/zipapp self-update after each command. Off: `RESEARCH_CLI_NO_UPDATE=1`.
+Pick **one** artifact for this machine; do not run every curl. Unsigned macOS downloads may need `xattr -d com.apple.quarantine "$HOME/.local/bin/research-cli"`. Then confirm with `research-cli --version` and return to the version guard. Frozen/zipapp installs self-update after each command. Off: `RESEARCH_CLI_NO_UPDATE=1`.
 
 ## When to use which provider
 
