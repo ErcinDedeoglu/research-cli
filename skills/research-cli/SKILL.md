@@ -1,6 +1,6 @@
 ---
 name: research-cli
-version: 0.2.4
+version: 0.2.5
 description: >
   Run research-cli to search scientific papers (BGPT, Firecrawl research
   index), the web (Brave Search, Exa), page chunks (Brave llm-context),
