@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
+from research_cli import __version__  # noqa: E402
 from research_cli.cli import main  # noqa: E402
 
 from fixtures import (  # noqa: E402
@@ -80,7 +81,7 @@ class HelpTests(unittest.TestCase):
     def test_version_prints_package_version(self) -> None:
         proc = _run_module("--version")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertIn("0.1.0", proc.stdout)
+        self.assertIn(__version__, proc.stdout)
 
     def test_self_update_source_is_json(self) -> None:
         proc = _run_module("--self-update")

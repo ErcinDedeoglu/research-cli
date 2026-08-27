@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -19,25 +23,71 @@ jobs:
       - name: Run tests
         run: PYTHONPATH=src python -m unittest discover -s tests -v
 
-  zipapp:
+  version:
     needs: [test]
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.semver.outputs.version }}
+      tag: ${{ steps.semver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Bump version
+        id: semver
+        run: |
+          set -euo pipefail
+          version="$(python scripts/semver.py next)"
+          python scripts/semver.py apply "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+      - name: Commit and tag
+        run: |
+          set -euo pipefail
+          version="${{ steps.semver.outputs.version }}"
+          tag="v${version}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- src/research_cli/__init__.py; then
+            echo "version file already ${version}"
+          else
+            git add src/research_cli/__init__.py
+            git commit -m "chore: release ${tag}"
+          fi
+          if git rev-parse "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "tag ${tag} already exists"
+          else
+            git tag "$tag"
+          fi
+          git push origin "HEAD:main"
+          git push origin "$tag"
+
+  zipapp:
+    needs: [version]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Build zipapp
         run: bash scripts/build-zipapp.sh dist
       - name: Smoke zipapp
-        run: python dist/research-cli.pyz --help
+        run: |
+          python dist/research-cli.pyz --version
+          python dist/research-cli.pyz --help
       - uses: actions/upload-artifact@v4
         with:
           name: research-cli-pyz
           path: dist/research-cli.pyz
 
   freeze:
-    needs: [test]
+    needs: [version]
     strategy:
       fail-fast: false
       matrix:
@@ -53,6 +103,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -83,7 +135,7 @@ jobs:
           path: dist/release/${{ matrix.artifact }}
 
   publish:
-    needs: [zipapp, freeze]
+    needs: [version, zipapp, freeze]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -93,6 +145,7 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -101,16 +154,15 @@ jobs:
             echo "no artifacts to publish"
             exit 1
           fi
-          tag="r-${GITHUB_SHA::7}"
-          notes="Built from ${GITHUB_SHA} on ${GITHUB_REF_NAME}."
-          if gh release view "$tag" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            gh release upload "$tag" "${files[@]}" --clobber --repo "${GITHUB_REPOSITORY}"
-            gh release edit "$tag" --title "research-cli ${tag}" --notes "$notes" --latest --repo "${GITHUB_REPOSITORY}"
+          notes="research-cli ${TAG} from ${GITHUB_SHA} on ${GITHUB_REF_NAME}."
+          if gh release view "$TAG" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber --repo "${GITHUB_REPOSITORY}"
+            gh release edit "$TAG" --title "research-cli ${TAG}" --notes "$notes" --latest --repo "${GITHUB_REPOSITORY}"
           else
-            gh release create "$tag" "${files[@]}" \
+            gh release create "$TAG" "${files[@]}" \
               --repo "${GITHUB_REPOSITORY}" \
-              --target "${GITHUB_SHA}" \
-              --title "research-cli ${tag}" \
+              --target "$TAG" \
+              --title "research-cli ${TAG}" \
               --notes "$notes" \
               --latest
           fi

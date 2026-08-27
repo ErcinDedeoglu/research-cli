@@ -39,7 +39,7 @@ pip install -e .
 # or: PYTHONPATH=src python -m research_cli --help
 ```
 
-Every push to `main` publishes a GitHub Release (`r-<sha>`) with the binaries and zipapp. Frozen binaries and `research-cli.pyz` then force a self-update from that latest release **after** each command returns (detached, so search/scrape is not delayed). `research-cli --self-update` runs that updater in the foreground. `RESEARCH_CLI_NO_UPDATE=1` disables the background updater. pip installs are not replaced; `--self-update` prints a `pip install --upgrade` hint instead.
+Every push to `main` bumps **SemVer** (`vMAJOR.MINOR.PATCH`) from conventional commits and publishes a GitHub Release. `research-cli --version` is `src/research_cli/__init__.py` (single source; `pyproject.toml` reads it). Bumps: `feat:` minor, `fix:`/`chore:`/`docs:`/other patch, `type!:` or `BREAKING CHANGE:` major (on 0.x, major is a minor). Frozen binaries and `research-cli.pyz` then force a self-update from that latest release **after** each command returns (detached, so search/scrape is not delayed). `research-cli --self-update` runs that updater in the foreground. `RESEARCH_CLI_NO_UPDATE=1` disables the background updater. pip installs are not replaced; `--self-update` prints a `pip install --upgrade` hint instead.
 
 ## Providers
 

@@ -19,6 +19,7 @@
 | Skill alignment | `PYTHONPATH=src python -m unittest tests.test_skill -v` | <1s |
 | Zipapp | `bash scripts/build-zipapp.sh dist` | ~1s |
 | Self-update (source/pip) | `python -m research_cli --self-update` | <1s |
+| Next SemVer | `python scripts/semver.py next` | <1s |
 
 After install, `research-cli` is the same entry as `python -m research_cli`. Load keys from `.env` (gitignored); copy `.env.example`.
 
@@ -39,11 +40,13 @@ tests/test_skill.py                  → skill ↔ CLI parser/keys alignment
 tests/test_providers.py              → injectable HTTP: method/path/auth/parse
 tests/test_cli.py                    → --help, missing keys, fixture-server CLI
 tests/test_update.py                 → version compare, assets, replace, background spawn, --self-update
+tests/test_semver.py                 → conventional-commit bump rules and git tag next-version
 tests/fixtures.py                    → fixture JSON + local HTTP server
 .env.example                         → placeholder keys
 .github/workflows/ci.yml             → unittest on Python 3.11/3.12
-.github/workflows/release.yml        → test + pip-cached freeze + GitHub Release on every main commit
+.github/workflows/release.yml        → test, SemVer bump/tag, pip-cached freeze, GitHub Release on every main commit
 requirements-freeze.txt              → pinned PyInstaller for the freeze job
+scripts/semver.py                    → next/apply MAJOR.MINOR.PATCH from v* tags + conventional commits
 scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
 ```
 
@@ -67,6 +70,7 @@ scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
 | Need live keys | `.env` locally; never commit it |
 | Adding a Python dependency | Ask first — stdlib HTTP only unless asked |
 | Change freeze/zipapp artifact names | Keep `asset_name()` in `update.py` in lockstep with `.github/workflows/release.yml` |
+| Commit to `main` | Conventional commits: `feat:` minor, `fix:`/`chore:`/`docs:` patch, `feat!:` or `BREAKING CHANGE:` major (0.x major → minor). Do not hand-edit `__version__`; the release workflow owns it |
 
 ## Boundaries
 
@@ -98,3 +102,4 @@ scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
 | `RESEARCH_CLI_NO_UPDATE` | Disables the post-command spawn; `--self-update` still runs |
 | llm-context | Brave `GET /res/v1/llm/context` — page chunks, not titles-only |
 | papers | Firecrawl research index (`/v2/search/research/papers`), not BGPT |
+| SemVer | `src/research_cli/__init__.py` `__version__`; tags `vMAJOR.MINOR.PATCH`; `python scripts/semver.py next` |

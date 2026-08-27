@@ -42,7 +42,7 @@ research-cli firecrawl papers related arxiv:1706.03762 --intent "efficient atten
 
 `--base-url` overrides the API origin (local fixture servers). Output is JSON on stdout.
 
-Frozen binaries and `research-cli.pyz` force-update from GitHub Releases after the command finishes (background, does not block JSON output). Foreground: --self-update. Disable with `RESEARCH_CLI_NO_UPDATE=1`. pip installs are not replaced.
+`--version` prints the SemVer from the install. Frozen binaries and `research-cli.pyz` force-update from GitHub Releases after the command finishes (background, does not block JSON output). Foreground: --self-update. Disable with `RESEARCH_CLI_NO_UPDATE=1`. pip installs are not replaced.
 
 ## Env keys
 

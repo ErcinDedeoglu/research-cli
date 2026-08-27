@@ -8,9 +8,10 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote, urlencode
 
+from research_cli import __version__
 from research_cli.errors import ProviderHttpError
 
-USER_AGENT = "research-cli/0.1.0"
+USER_AGENT = f"research-cli/{__version__}"
 
 Transport = Callable[["HttpRequest"], "HttpResponse"]
 

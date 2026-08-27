@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "research-cli"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Agent-facing research CLI for BGPT, Brave Search, Exa, and Firecrawl HTTP APIs"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,6 +12,9 @@ license = { text = "MIT" }
 
 [project.scripts]
 research-cli = "research_cli.cli:run"
+
+[tool.setuptools.dynamic]
+version = { attr = "research_cli.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
