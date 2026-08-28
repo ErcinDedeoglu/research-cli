@@ -101,3 +101,11 @@ def require_reddit_credentials(environ: Mapping[str, str]) -> tuple[str, str]:
             "reddit", ("REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET")
         )
     return client_id, client_secret
+
+
+def require_x_credentials(environ: Mapping[str, str]) -> tuple[str, str]:
+    auth_token = (environ.get("X_AUTH_TOKEN") or "").strip()
+    ct0 = (environ.get("X_CT0") or "").strip()
+    if not auth_token or not ct0:
+        raise MissingKeyError("x", ("X_AUTH_TOKEN", "X_CT0"))
+    return auth_token, ct0

@@ -40,6 +40,10 @@ from fixtures import (  # noqa: E402
     MALPEDIA_YARA_NAME,
     MALPEDIA_YARA_RAW,
     MALPEDIA_ZIP,
+    X_CURSOR,
+    X_TEXT,
+    X_TWEET_ID,
+    X_USER,
     start_fixture_server,
 )
 
@@ -51,6 +55,8 @@ _KEY_VARS = (
     "FIRECRAWL_API_KEY",
     "REDDIT_CLIENT_ID",
     "REDDIT_CLIENT_SECRET",
+    "X_AUTH_TOKEN",
+    "X_CT0",
     "RESEARCH_CLI_BASE_URL",
     "RESEARCH_CLI_NO_UPDATE",
     "RESEARCH_CLI_CACHE_DIR",
@@ -98,6 +104,7 @@ class HelpTests(unittest.TestCase):
         self.assertIn("sploitus", text)
         self.assertIn("exploitdb", text)
         self.assertIn("malpedia", text)
+        self.assertIn("twitter", text)
         self.assertIn("--self-update", text)
 
     def test_version_prints_package_version(self) -> None:
@@ -127,6 +134,8 @@ class MissingKeyTests(unittest.TestCase):
             (["reddit", "search", "q"], "reddit"),
             (["reddit", "thread", "abc123"], "reddit"),
             (["reddit", "subreddit", "python"], "reddit"),
+            (["x", "search", "q"], "x"),
+            (["x", "thread", "123"], "x"),
         ]
         empty = {}
         for argv, provider in cases:
@@ -139,6 +148,15 @@ class MissingKeyTests(unittest.TestCase):
         proc = _run_module("brave", "search", "q")
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("brave", proc.stderr.lower())
+
+    def test_subprocess_missing_x_keys(self) -> None:
+        search = _run_module("x", "search", "q")
+        self.assertEqual(search.returncode, 2, search.stderr)
+        self.assertIn("x", search.stderr.lower())
+        self.assertIn("x_auth_token", search.stderr.lower())
+        thread = _run_module("x", "thread", "123")
+        self.assertEqual(thread.returncode, 2, thread.stderr)
+        self.assertIn("x_ct0", thread.stderr.lower())
 
     def test_subprocess_env_file_fills_brave_key(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -165,6 +183,8 @@ class FixtureServerCliTests(unittest.TestCase):
                 "FIRECRAWL_API_KEY": "fixture-firecrawl",
                 "REDDIT_CLIENT_ID": "fixture-reddit-id",
                 "REDDIT_CLIENT_SECRET": "fixture-reddit-secret",
+                "X_AUTH_TOKEN": "fixture-x-auth",
+                "X_CT0": "fixture-x-ct0",
             }
         )
 
@@ -186,6 +206,7 @@ class FixtureServerCliTests(unittest.TestCase):
             (["sploitus", "search", "log4j"], SPLOITUS_TITLE),
             (["exploitdb", "search", "log4j"], EDB_TITLE),
             (["malpedia", "search", "emotet"], MALPEDIA_FAMILY_ID),
+            (["x", "search", "VMProtect"], X_TEXT),
         ]
         for _ in range(2):
             for args, needle in commands:
@@ -264,11 +285,41 @@ class FixtureServerCliTests(unittest.TestCase):
             (["malpedia", "yara-list", "--family", "win.emotet"], MALPEDIA_YARA_NAME),
             (["malpedia", "yara-after", "2026-01-01"], MALPEDIA_YARA_NAME),
             (["malpedia", "version"], "26109"),
+            (["x", "search", "VMProtect LLVM", "--product", "latest"], X_TEXT),
+            (["x", "search", "q", "--product", "top", "--count", "5"], X_TEXT),
+            (["x", "search", "q", "--product", "people"], X_TEXT),
+            (["x", "search", "q", "--product", "media", "--cursor", X_CURSOR], X_TEXT),
+            (["x", "thread", X_TWEET_ID], X_TEXT),
+            (
+                ["x", "thread", f"https://x.com/{X_USER}/status/{X_TWEET_ID}"],
+                X_TEXT,
+            ),
+            (
+                ["x", "thread", f"https://twitter.com/{X_USER}/status/{X_TWEET_ID}"],
+                X_TEXT,
+            ),
         ]
         for args, needle in cases:
             proc = self._cli(*args)
             self.assertEqual(proc.returncode, 0, proc.stderr + str(args))
             self.assertIn(needle, proc.stdout)
+
+    def test_x_help_and_invalid_product(self) -> None:
+        help_proc = self._cli("x", "--help")
+        self.assertEqual(help_proc.returncode, 0, help_proc.stderr)
+        self.assertIn("search", help_proc.stdout.lower())
+        self.assertIn("thread", help_proc.stdout.lower())
+        search_help = self._cli("x", "search", "--help")
+        self.assertEqual(search_help.returncode, 0, search_help.stderr)
+        self.assertIn("--product", search_help.stdout)
+        self.assertIn("--count", search_help.stdout)
+        self.assertIn("--cursor", search_help.stdout)
+        thread_help = self._cli("x", "thread", "--help")
+        self.assertEqual(thread_help.returncode, 0, thread_help.stderr)
+        self.assertIn("--cursor", thread_help.stdout)
+        bad = self._cli("x", "search", "q", "--product", "hot")
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("product", (bad.stderr + bad.stdout).lower())
 
     def test_exploitdb_download_writes_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

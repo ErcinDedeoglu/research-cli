@@ -3,7 +3,7 @@
 
 # AGENTS.md
 
-**This repo** is an agent-facing **research CLI**. It calls **BGPT, Brave Search, Exa, Firecrawl, Reddit, Sploitus, Exploit-DB, and Malpedia over HTTP REST** (not MCP). Agents use the CLI via the skill; coding agents change code here.
+**This repo** is an agent-facing **research CLI**. It calls **BGPT, Brave Search, Exa, Firecrawl, Reddit, Sploitus, Exploit-DB, Malpedia, and X over HTTP REST** (not MCP). Agents use the CLI via the skill; coding agents change code here.
 
 **Playbook for running research:** [`skills/research-cli/SKILL.md`](skills/research-cli/SKILL.md) — commands, env keys, when-to-use. Do not copy that into this file.
 
@@ -39,6 +39,8 @@ src/research_cli/providers/reddit.py     → POST /api/v1/access_token, GET /sea
 src/research_cli/providers/sploitus.py   → POST /search; GET /autocomplete; GET /exploit?id=; GET /cve/{id}; GET /product/{slug}[/page/N]; GET /latest[/page/N]; GET /
 src/research_cli/providers/exploitdb.py  → GET /search, GET /, GET /papers, GET /shellcodes, GET /google-hacking-database (XHR JSON); GET /exploits/{id}, /docs/{id}, /shellcodes/{id}, /ghdb/{id}, /raw/{id}, /download/{id}; GET /authors-ajax; GET /api/authorid/{id}
 src/research_cli/providers/malpedia.py   → guest GET /api/find|get|list (family, actor, yara, bib, misp, references, version); yara tlp/auto/after dumps; family yara zip. Sample zip helpers exist in-module, not CLI-wired.
+src/research_cli/providers/x.py          → GraphQL SearchTimeline / TweetDetail (cookie auth + generated x-client-transaction-id)
+src/research_cli/providers/x_transaction.py → homepage SVG + ondemand.s.js tid generator (stdlib)
 skills/research-cli/SKILL.md         → agent playbook (not under .grok/; copy to kenopahq/skills/research-cli on change)
 tests/test_skill.py                  → skill ↔ CLI parser/keys alignment
 tests/test_providers.py              → injectable HTTP: method/path/auth/parse
@@ -99,6 +101,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 |------|-----|
 | Agent needs papers/web/scrape | Point at `skills/research-cli/SKILL.md` and the CLI — do not call vendor MCP servers |
 | Agent needs malware family/YARA | `research-cli malpedia search` then `family` / `yara` / `bib --family` / `references --url` (guest; sample zip not on CLI) |
+| Agent needs X/Twitter posts | `research-cli x search` then `x thread` (`X_AUTH_TOKEN` + `X_CT0`; never commit cookies) |
 | CVE/exploit/PoC also | Run sploitus **and** exploitdb (EDB is the OffSec primary; Sploitus is an index) |
 | Add/change a CLI command or flag | Update provider + `cli.py` + skill examples + `tests/test_skill.py` in the same change, then copy `skills/research-cli/SKILL.md` to `/Users/ercin/git/github/kenopahq/skills/research-cli/` |
 | Skill `version:` vs `research-cli --version` | Must match. Skill older → replace file from `raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md`. Binary older → `--self-update` |
@@ -114,7 +117,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 ### Always
 - Keep `skills/research-cli/SKILL.md` aligned with `build_parser()` and `keys.py`
 - Run `PYTHONPATH=src python -m unittest discover -s tests -v` after CLI/skill changes
-- JSON on stdout, errors on stderr; missing Brave/Exa/Firecrawl/Reddit keys exit 2 and name the provider; Sploitus, Exploit-DB, and Malpedia catalog/YARA need no key
+- JSON on stdout, errors on stderr; missing Brave/Exa/Firecrawl/Reddit/X keys exit 2 and name the provider; Sploitus, Exploit-DB, and Malpedia catalog/YARA need no key; never commit `X_AUTH_TOKEN` / `X_CT0`
 - Conventional commits on `main`; leave `__version__` to the release workflow
 - Publish with `gh release create <tag> --verify-tag` (tag is created in the `version` job)
 
@@ -135,7 +138,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | Term | Means |
 |------|-------|
 | Skill | `skills/research-cli/SKILL.md` — how agents **run** the CLI |
-| Provider | One HTTP backend: bgpt, brave, exa, firecrawl, reddit, sploitus, exploitdb |
+| Provider | One HTTP backend: bgpt, brave, exa, firecrawl, reddit, sploitus, exploitdb, malpedia, x |
 | `--base-url` | Override API origin (fixture tests), not a vendor path |
 | `--live` | Firecrawl scrape `maxAge=0` |
 | `--self-update` | Foreground GitHub latest-release replace (always download matching asset) |
@@ -146,4 +149,5 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | sploitus | Guest site: SPA `POST /search` + HTML hubs (`/exploit`, `/cve`, `/product`, `/latest`) |
 | malpedia | Fraunhofer FKIE malware catalog: guest `GET /api/find|get|list|yara|bib|misp|references`; bulk `yara-dump` / `yara-after`; sample zip not on CLI |
 | exploitdb | Guest DataTables: `GET /search` with `X-Requested-With: XMLHttpRequest`; hubs `/exploits/{id}`, `/raw/{id}`, GHDB, papers, shellcodes |
+| x | Logged-in X web GraphQL: `GET /i/api/graphql/{queryId}/SearchTimeline` and `TweetDetail`; cookies `auth_token`+`ct0`; generated `x-client-transaction-id` |
 | SemVer | `src/research_cli/__init__.py` `__version__`; skill frontmatter `version:` must match; tags `vMAJOR.MINOR.PATCH`; `python scripts/semver.py next` |

@@ -18,6 +18,7 @@ from research_cli.keys import (  # noqa: E402
     require_exa_key,
     require_firecrawl_key,
     require_reddit_credentials,
+    require_x_credentials,
 )
 
 SKILL = ROOT / "skills" / "research-cli" / "SKILL.md"
@@ -32,6 +33,8 @@ ENV_NAMES = (
     "FIRECRAWL_API_KEY",
     "REDDIT_CLIENT_ID",
     "REDDIT_CLIENT_SECRET",
+    "X_AUTH_TOKEN",
+    "X_CT0",
 )
 
 
@@ -182,6 +185,7 @@ class SkillFileTests(unittest.TestCase):
         self.assertTrue(callable(require_exa_key))
         self.assertTrue(callable(require_firecrawl_key))
         self.assertTrue(callable(require_reddit_credentials))
+        self.assertTrue(callable(require_x_credentials))
         for name in ENV_NAMES:
             self.assertIn(
                 f"`{name}`",
@@ -198,6 +202,8 @@ class SkillFileTests(unittest.TestCase):
             "BGPT_API_KEY",
             "REDDIT_CLIENT_ID",
             "REDDIT_CLIENT_SECRET",
+            "X_AUTH_TOKEN",
+            "X_CT0",
         ):
             self.assertIn(name, example)
         self.assertTrue(AGENTS.is_file(), f"missing {AGENTS}")

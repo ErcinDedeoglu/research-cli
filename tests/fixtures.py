@@ -593,6 +593,140 @@ MALPEDIA_SAMPLE_INFO = {
 }
 MALPEDIA_ZIP = b"PK\x03\x04fixture-malpedia-zip"
 
+X_TWEET_ID = "2069347283918000383"
+X_USER = "FixtureUser"
+X_TEXT = "Fixture VMProtect LLVM tweet"
+X_CURSOR = "fixture-cursor"
+X_QUERY_SEARCH = "hyPfJYJ_XAtDYoslQc-Rgg"
+X_QUERY_DETAIL = "XMOz5h24KAZ86qKffKTLdQ"
+X_ONDEMAND_HASH = "cafebabe"
+X_VERIFY_KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4v"
+
+
+def _x_anim_svg(index: int) -> str:
+    rows = []
+    for row in range(16):
+        nums = " ".join(str((index * 13 + row * 5 + k) % 240) for k in range(12))
+        rows.append(nums)
+    d_attr = "M 10,30 C " + " C ".join(rows)
+    return (
+        f'<svg id="loading-x-anim-{index}"><g>'
+        f'<path d="M0 0"></path><path d="{d_attr}"></path></g></svg>'
+    )
+
+
+X_HOME_HTML = (
+    "<!doctype html><html><head>"
+    f'<meta name="twitter-site-verification" content="{X_VERIFY_KEY}"/>'
+    "</head><body>"
+    + "".join(_x_anim_svg(i) for i in range(4))
+    + ',12:"ondemand.s",13:"other"'
+    + f',12:"{X_ONDEMAND_HASH}"'
+    + '<script src="https://abs.twimg.com/responsive-web/client-web/main.fixturea.js">'
+    + "</script></body></html>"
+)
+X_ONDEMAND_JS = "(a[7], 16),(a[37], 16),(a[24], 16),(a[14], 16)"
+X_MAIN_JS = (
+    'e.exports={queryId:"'
+    + X_QUERY_SEARCH
+    + '",operationName:"SearchTimeline",operationType:"query",'
+    'metadata:{featureSwitches:["rweb_video_screen_enabled",'
+    '"responsive_web_graphql_timeline_navigation_enabled"]}}'
+    'e.exports={queryId:"'
+    + X_QUERY_DETAIL
+    + '",operationName:"TweetDetail",operationType:"query",'
+    'metadata:{featureSwitches:["rweb_video_screen_enabled"]}}'
+)
+X_TWEET_RESULT = {
+    "__typename": "Tweet",
+    "rest_id": X_TWEET_ID,
+    "core": {
+        "user_results": {
+            "result": {
+                "__typename": "User",
+                "rest_id": "1",
+                "core": {"name": "Fixture User", "screen_name": X_USER},
+            }
+        }
+    },
+    "legacy": {
+        "id_str": X_TWEET_ID,
+        "full_text": X_TEXT,
+        "created_at": "Tue Jun 23 09:10:13 +0000 2026",
+        "lang": "en",
+        "favorite_count": 1,
+        "retweet_count": 2,
+        "reply_count": 0,
+        "quote_count": 0,
+        "bookmark_count": 3,
+    },
+}
+X_SEARCH_PAYLOAD = {
+    "data": {
+        "search_by_raw_query": {
+            "search_timeline": {
+                "timeline": {
+                    "instructions": [
+                        {
+                            "type": "TimelineAddEntries",
+                            "entries": [
+                                {
+                                    "entryId": f"tweet-{X_TWEET_ID}",
+                                    "content": {
+                                        "entryType": "TimelineTimelineItem",
+                                        "itemContent": {
+                                            "itemType": "TimelineTweet",
+                                            "tweet_results": {"result": X_TWEET_RESULT},
+                                        },
+                                    },
+                                },
+                                {
+                                    "entryId": "cursor-bottom-1",
+                                    "content": {
+                                        "entryType": "TimelineTimelineCursor",
+                                        "cursorType": "Bottom",
+                                        "value": X_CURSOR,
+                                    },
+                                },
+                            ],
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}
+X_THREAD_PAYLOAD = {
+    "data": {
+        "threaded_conversation_with_injections_v2": {
+            "timeline": {
+                "instructions": [
+                    {
+                        "type": "TimelineAddEntries",
+                        "entries": [
+                            {
+                                "entryId": f"tweet-{X_TWEET_ID}",
+                                "content": {
+                                    "itemContent": {
+                                        "tweet_results": {"result": X_TWEET_RESULT}
+                                    }
+                                },
+                            },
+                            {
+                                "entryId": "cursor-bottom-1",
+                                "content": {
+                                    "cursorType": "Bottom",
+                                    "value": X_CURSOR,
+                                },
+                            },
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+}
+
 
 _POST_ROUTES = {
     "/api/mcp-search": BGPT_PAYLOAD,
@@ -830,6 +964,21 @@ class FixtureHandler(BaseHTTPRequestHandler):
                 self._send(200, PAPERS_READ_PAYLOAD)
                 return
             self._send(200, PAPERS_INSPECT_PAYLOAD)
+            return
+        if path == "/home":
+            self._send_html(X_HOME_HTML)
+            return
+        if path.endswith(f"/ondemand.s.{X_ONDEMAND_HASH}a.js"):
+            self._send_text(X_ONDEMAND_JS, "application/javascript")
+            return
+        if path.endswith("/main.fixturea.js"):
+            self._send_text(X_MAIN_JS, "application/javascript")
+            return
+        if path.endswith("/SearchTimeline"):
+            self._send(200, X_SEARCH_PAYLOAD)
+            return
+        if path.endswith("/TweetDetail"):
+            self._send(200, X_THREAD_PAYLOAD)
             return
         self._send(404, {"error": f"no fixture for GET {path}"})
 

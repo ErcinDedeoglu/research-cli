@@ -5,16 +5,16 @@ description: >
   MUST USE for search and research. Whenever the user asks to search, research,
   look up, find, google, investigate, cite, gather sources, check the web, or
   find papers/literature — run this CLI and call EVERY provider in parallel
-  (bgpt, brave, exa, firecrawl, reddit). For CVE, exploit, PoC, RCE, or hacktool
+  (bgpt, brave, exa, firecrawl, reddit, x). For CVE, exploit, PoC, RCE, or hacktool
   queries, also run sploitus and exploitdb. For malware family, YARA, or actor
   queries, also run malpedia. Do not pick one. Do not guess or use vendor MCP.
   Triggers: search, research, papers, literature, scrape, lookup, google, cite,
-  sources, bgpt, brave, exa, firecrawl, reddit, sploitus, exploitdb, malpedia, /research-cli.
+  sources, bgpt, brave, exa, firecrawl, reddit, sploitus, exploitdb, malpedia, x, twitter, /research-cli.
 ---
 
 # research-cli
 
-Do not call BGPT, Brave, Exa, Firecrawl, Reddit, Sploitus, Exploit-DB, or Malpedia MCP servers. Run this CLI.
+Do not call BGPT, Brave, Exa, Firecrawl, Reddit, Sploitus, Exploit-DB, Malpedia, or X/Twitter MCP servers. Run this CLI.
 
 ## Version guard
 
@@ -56,6 +56,8 @@ FIRECRAWL_API_KEY=
 REDDIT_CLIENT_ID=
 REDDIT_CLIENT_SECRET=
 # BGPT_API_KEY=
+# X_AUTH_TOKEN=
+# X_CT0=
 ```
 
 chmod 600 the file.
@@ -71,6 +73,7 @@ research-cli exa search "QUERY"
 research-cli firecrawl search "QUERY" --categories research
 research-cli firecrawl papers search "QUERY"
 research-cli reddit search "QUERY"
+research-cli x search "QUERY"
 ```
 
 For CVE, exploit, PoC, RCE, or hacktool queries, also run:
@@ -88,7 +91,7 @@ research-cli malpedia search "QUERY"
 
 Merge the JSON. Then scrape/read specific URLs or paper IDs if needed. For Reddit, search then `reddit thread` on the best permalinks; `reddit subreddit` to browse a community. For Sploitus: `search` then `exploit` on an id for the full PoC (CVSS, EPSS, entry point, tags, related); `cve` / `product` / `latest` / `home` for the HTML hubs; `autocomplete` for typeahead. Pass `--source` on search when you need PoC bodies in the hit list; `--type tools` searches hacktools. For Exploit-DB: `search` then `exploit` / `raw` for the OffSec PoC; `download` writes `/download/{id}` to disk (exploit, paper PDF, shellcode, or attached app); `latest` is the homepage table; `ghdb` / `dork` for Google dorks; `papers` / `paper` and `shellcodes` / `shellcode` for those databases; `authors` typeahead; `stats` for counts. Pass `--output` as a file or directory. For Malpedia (guest, no key): `search` then `family` (full metadata including `uuid`, `library_entries`, `urls`) and `yara` on a family id (`win.emotet`); `bib --family` for the library BibTeX; `references --url` on a family URL to get linked actors (the details-page attribution); `actor` for an actor id. `yara --zip` writes the family rule zip. `yara-list` indexes guest rules; `yara-dump --tlp white` / `--auto` writes the bulk `.yar` (or `--zip`); `yara-after YYYY-MM-DD` is the incremental JSON. `families` / `actors` list ids; `--full` dumps every record (multi-MB). `misp` is the galaxy cluster (~4MB). `bib` without flags is the full library (~6.7MB). Sample zip endpoints are invite-only and not on the CLI. For bulk dumps use `--output` and `--timeout 180`.
 
-**bgpt** papers (optional `BGPT_API_KEY`). **brave** `llm-context` is page chunks (`BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`); `search` is titles/URLs. **exa** semantic search (`EXA_API_KEY`). **firecrawl** web search + paper index (`FIRECRAWL_API_KEY`). **reddit** posts + comments (`REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET`). **sploitus** exploit/hacktool index (no key). **exploitdb** OffSec Exploit Database (no key). **malpedia** malware families/actors/YARA/bib/MISP (no key; guest).
+**bgpt** papers (optional `BGPT_API_KEY`). **brave** `llm-context` is page chunks (`BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`); `search` is titles/URLs. **exa** semantic search (`EXA_API_KEY`). **firecrawl** web search + paper index (`FIRECRAWL_API_KEY`). **reddit** posts + comments (`REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET`). **sploitus** exploit/hacktool index (no key). **exploitdb** OffSec Exploit Database (no key). **malpedia** malware families/actors/YARA/bib/MISP (no key; guest). **x** is the logged-in X web GraphQL client (`X_AUTH_TOKEN` + `X_CT0` from the browser `auth_token` and `ct0` cookies). Guest search does not work. If those cookies are missing, skip `x` rather than blocking the other providers. After `x search`, `x thread` on a tweet id or `https://x.com/{user}/status/{id}` for the conversation. `--product latest|top|people|media` (default latest). `--cursor` pages. The CLI generates `x-client-transaction-id` from the homepage; do not paste that header yourself.
 
 ## Commands
 
@@ -150,6 +153,9 @@ research-cli malpedia yara-dump --tlp white --output /tmp --timeout 180
 research-cli malpedia yara-dump --auto --zip --output /tmp --timeout 180
 research-cli malpedia yara-after 2026-01-01
 research-cli malpedia version
+research-cli x search "VMProtect LLVM" --product latest --count 20
+research-cli x thread 2069347283918000383
+research-cli x thread https://x.com/user/status/2069347283918000383
 ```
 
 `--base-url` overrides the API origin (local fixture servers). Output is JSON on stdout. `--version` prints SemVer.
@@ -166,5 +172,6 @@ research-cli malpedia version
 | sploitus | none | no |
 | exploitdb | none | no |
 | malpedia | none | no |
+| x | `X_AUTH_TOKEN` and `X_CT0` | yes |
 
-Missing Brave, Exa, Firecrawl, or Reddit keys exit non-zero and name the provider. BGPT, Sploitus, Exploit-DB, and Malpedia HTTP error bodies are printed on failure.
+Missing Brave, Exa, Firecrawl, Reddit, or X keys exit non-zero and name the provider. BGPT, Sploitus, Exploit-DB, and Malpedia HTTP error bodies are printed on failure.

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import copy
 import json
 import sys
 import tempfile
@@ -12,7 +14,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from research_cli.errors import ProviderHttpError  # noqa: E402
 from research_cli.http import HttpResponse  # noqa: E402
-from research_cli.providers import bgpt, brave, exa, exploitdb, firecrawl, malpedia, reddit, sploitus  # noqa: E402
+from research_cli.providers import bgpt, brave, exa, exploitdb, firecrawl, malpedia, reddit, sploitus, x  # noqa: E402
+from research_cli.providers import x_transaction  # noqa: E402
 
 from research_cli.providers import firecrawl_papers as papers  # noqa: E402
 
@@ -125,6 +128,20 @@ from fixtures import (  # noqa: E402
     MALPEDIA_YARA_RAW,
     MALPEDIA_YARA_SOURCE,
     MALPEDIA_ZIP,
+    X_CURSOR,
+    X_HOME_HTML,
+    X_MAIN_JS,
+    X_ONDEMAND_HASH,
+    X_ONDEMAND_JS,
+    X_QUERY_DETAIL,
+    X_QUERY_SEARCH,
+    X_SEARCH_PAYLOAD,
+    X_TEXT,
+    X_THREAD_PAYLOAD,
+    X_TWEET_ID,
+    X_TWEET_RESULT,
+    X_USER,
+    X_VERIFY_KEY,
 )
 
 
@@ -174,6 +191,31 @@ class SequentialTransport:
             status=200,
             headers={"Content-Type": "application/json"},
             body=body,
+        )
+
+
+class ScriptedTransport:
+    def __init__(self, *items: object) -> None:
+        self.items = list(items)
+        self.requests: list = []
+
+    def __call__(self, request):
+        self.requests.append(request)
+        item = self.items.pop(0)
+        if isinstance(item, HttpResponse):
+            return item
+        if isinstance(item, (bytes, bytearray)):
+            return HttpResponse(status=200, headers={}, body=bytes(item))
+        if isinstance(item, str):
+            return HttpResponse(
+                status=200,
+                headers={"Content-Type": "text/plain; charset=UTF-8"},
+                body=item.encode("utf-8"),
+            )
+        return HttpResponse(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body=json.dumps(item).encode("utf-8"),
         )
 
 
@@ -1072,6 +1114,319 @@ class ProviderClientTests(unittest.TestCase):
             self.assertEqual(captured["request"].headers.get("Authorization"), "apitoken tok")
             self.assertEqual(path.read_bytes(), MALPEDIA_ZIP)
             self.assertEqual(out["filename"], f"{MALPEDIA_HASH}.zip")
+
+    def test_x_transaction_extracts_home_and_is_deterministic(self) -> None:
+        self.assertEqual(x_transaction.extract_verification_key(X_HOME_HTML), X_VERIFY_KEY)
+        self.assertEqual(x_transaction.extract_ondemand_hash(X_HOME_HTML), X_ONDEMAND_HASH)
+        self.assertEqual(x_transaction.extract_indices(X_ONDEMAND_JS), [7, 37, 24, 14])
+        self.assertEqual(len(x_transaction.extract_frames(X_HOME_HTML)), 4)
+        tx = x_transaction.ClientTransaction.from_documents(X_HOME_HTML, X_ONDEMAND_JS)
+        tid_a = tx.generate_transaction_id(
+            "GET", "/i/api/graphql/abc/SearchTimeline", time_now=1_700_000_000, random_num=7
+        )
+        tid_b = tx.generate_transaction_id(
+            "GET", "/i/api/graphql/abc/SearchTimeline", time_now=1_700_000_000, random_num=7
+        )
+        self.assertEqual(tid_a, tid_b)
+        self.assertNotIn("=", tid_a)
+        raw = base64.b64decode(tid_a + "==")
+        self.assertEqual(raw[0], 7)
+        with self.assertRaises(ProviderHttpError) as missing:
+            x_transaction.extract_verification_key("<html></html>")
+        self.assertIn("twitter-site-verification", str(missing.exception))
+        with self.assertRaises(ProviderHttpError):
+            x_transaction.extract_ondemand_hash("<html></html>")
+        with self.assertRaises(ProviderHttpError):
+            x_transaction.extract_indices("no indices here")
+        with self.assertRaises(ProviderHttpError):
+            x_transaction.extract_frames("<svg></svg>")
+
+    def test_x_search_bootstrap_graphql_headers_and_parse(self) -> None:
+        transport = ScriptedTransport(
+            X_HOME_HTML, X_ONDEMAND_JS, X_MAIN_JS, X_SEARCH_PAYLOAD
+        )
+        out = x.search(
+            "VMProtect LLVM",
+            auth_token="auth-fixture",
+            ct0="ct0-fixture",
+            transport=transport,
+        )
+        self.assertEqual(len(transport.requests), 4)
+        home, ondemand, main, gql = transport.requests
+        self.assertEqual(urlparse(home.url).path, "/home")
+        self.assertIn("auth_token=auth-fixture", home.headers.get("Cookie", ""))
+        self.assertEqual(home.headers.get("x-csrf-token"), "ct0-fixture")
+        self.assertIn(f"ondemand.s.{X_ONDEMAND_HASH}a.js", ondemand.url)
+        self.assertTrue(urlparse(main.url).path.endswith("/main.fixturea.js"))
+        parsed = urlparse(gql.url)
+        self.assertEqual(gql.method, "GET")
+        self.assertEqual(parsed.path, f"/i/api/graphql/{X_QUERY_SEARCH}/SearchTimeline")
+        self.assertTrue(gql.headers.get("Authorization", "").startswith("Bearer "))
+        self.assertEqual(gql.headers.get("x-twitter-auth-type"), "OAuth2Session")
+        self.assertEqual(gql.headers.get("x-csrf-token"), "ct0-fixture")
+        self.assertIn("auth_token=auth-fixture", gql.headers.get("Cookie", ""))
+        self.assertTrue(gql.headers.get("x-client-transaction-id"))
+        qs = parse_qs(parsed.query)
+        variables = json.loads(qs["variables"][0])
+        self.assertEqual(variables["rawQuery"], "VMProtect LLVM")
+        self.assertEqual(variables["product"], "Latest")
+        self.assertEqual(out["provider"], "x")
+        self.assertEqual(out["results"][0]["text"], X_TEXT)
+        self.assertEqual(out["results"][0]["id"], X_TWEET_ID)
+        self.assertEqual(out["results"][0]["user"]["username"], X_USER)
+        self.assertIn(X_TWEET_ID, out["results"][0]["url"])
+        self.assertEqual(out["cursor"], X_CURSOR)
+        features = json.loads(qs["features"][0])
+        self.assertEqual(
+            set(features),
+            {
+                "rweb_video_screen_enabled",
+                "responsive_web_graphql_timeline_navigation_enabled",
+            },
+        )
+        self.assertFalse(features["rweb_video_screen_enabled"])
+
+    def test_x_search_products_count_cursor_and_fallback_query_id(self) -> None:
+        for product, expected in (
+            ("latest", "Latest"),
+            ("top", "Top"),
+            ("people", "People"),
+            ("media", "Photos"),
+        ):
+            transport = ScriptedTransport(
+                X_HOME_HTML, X_ONDEMAND_JS, X_MAIN_JS, X_SEARCH_PAYLOAD
+            )
+            x.search(
+                "q",
+                auth_token="auth-fixture",
+                ct0="ct0-fixture",
+                product=product,
+                count=7,
+                cursor="page-2",
+                transport=transport,
+            )
+            qs = parse_qs(urlparse(transport.requests[-1].url).query)
+            variables = json.loads(qs["variables"][0])
+            self.assertEqual(variables["product"], expected)
+            self.assertEqual(variables["count"], 7)
+            self.assertEqual(variables["cursor"], "page-2")
+        home = X_HOME_HTML.replace(
+            '<script src="https://abs.twimg.com/responsive-web/client-web/main.fixturea.js"></script>',
+            "",
+        )
+        fallback = ScriptedTransport(home, X_ONDEMAND_JS, X_SEARCH_PAYLOAD)
+        out = x.search(
+            "q", auth_token="auth-fixture", ct0="ct0-fixture", transport=fallback
+        )
+        self.assertEqual(len(fallback.requests), 3)
+        self.assertEqual(
+            urlparse(fallback.requests[-1].url).path,
+            f"/i/api/graphql/{X_QUERY_SEARCH}/SearchTimeline",
+        )
+        self.assertEqual(out["results"][0]["id"], X_TWEET_ID)
+        with self.assertRaises(ProviderHttpError) as empty:
+            x.search("  ", auth_token="a", ct0="b", transport=ScriptedTransport())
+        self.assertIn("missing search query", str(empty.exception))
+        with self.assertRaises(ProviderHttpError) as product:
+            x.search(
+                "q",
+                auth_token="a",
+                ct0="b",
+                product="hot",
+                transport=ScriptedTransport(
+                    X_HOME_HTML, X_ONDEMAND_JS, X_MAIN_JS, X_SEARCH_PAYLOAD
+                ),
+            )
+        self.assertIn("unknown product", str(product.exception))
+
+    def test_x_parse_visibility_note_quoted_replies_and_refs(self) -> None:
+        self.assertEqual(x.parse_tweet_ref(X_TWEET_ID), X_TWEET_ID)
+        self.assertEqual(
+            x.parse_tweet_ref(f"https://x.com/{X_USER}/status/{X_TWEET_ID}"),
+            X_TWEET_ID,
+        )
+        self.assertEqual(
+            x.parse_tweet_ref(
+                f"https://twitter.com/{X_USER}/status/{X_TWEET_ID}?s=20"
+            ),
+            X_TWEET_ID,
+        )
+        self.assertEqual(
+            x.parse_tweet_ref(f"https://x.com/i/web/status/{X_TWEET_ID}"),
+            X_TWEET_ID,
+        )
+        with self.assertRaises(ProviderHttpError):
+            x.parse_tweet_ref("")
+        with self.assertRaises(ProviderHttpError):
+            x.parse_tweet_ref("https://x.com/home")
+        quoted_id = "99"
+        quoted = copy.deepcopy(X_TWEET_RESULT)
+        quoted["rest_id"] = quoted_id
+        quoted["legacy"]["id_str"] = quoted_id
+        quoted["legacy"]["full_text"] = "quoted body"
+        wrapped = {
+            "__typename": "TweetWithVisibilityResults",
+            "tweet": copy.deepcopy(X_TWEET_RESULT),
+        }
+        wrapped["tweet"]["note_tweet"] = {
+            "note_tweet_results": {"result": {"text": "long note body"}}
+        }
+        wrapped["tweet"]["quoted_status_result"] = {"result": quoted}
+        payload = {
+            "data": {
+                "search_by_raw_query": {
+                    "search_timeline": {
+                        "timeline": {
+                            "instructions": [
+                                {
+                                    "entries": [
+                                        {
+                                            "content": {
+                                                "itemContent": {
+                                                    "tweet_results": {"result": wrapped}
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "content": {
+                                                "cursorType": "ShowMore",
+                                                "value": "more-cursor",
+                                            }
+                                        },
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+        parsed = x.parse_search_response(payload)
+        self.assertEqual(parsed["results"][0]["text"], "long note body")
+        self.assertEqual(parsed["results"][0]["quoted"]["id"], quoted_id)
+        self.assertEqual(parsed["results"][0]["quoted"]["text"], "quoted body")
+        self.assertEqual(parsed["cursor"], "more-cursor")
+        skipped = x.parse_search_response(
+            {
+                "data": {
+                    "search_by_raw_query": {
+                        "search_timeline": {
+                            "timeline": {
+                                "instructions": [
+                                    {
+                                        "entries": [
+                                            {
+                                                "content": {
+                                                    "itemContent": {
+                                                        "tweet_results": {
+                                                            "result": {
+                                                                "__typename": "TweetUnavailable"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        )
+        self.assertEqual(skipped["results"], [])
+        reply = copy.deepcopy(X_TWEET_RESULT)
+        reply["rest_id"] = "reply1"
+        reply["legacy"]["id_str"] = "reply1"
+        reply["legacy"]["full_text"] = "a reply"
+        thread_payload = copy.deepcopy(X_THREAD_PAYLOAD)
+        thread_payload["data"]["threaded_conversation_with_injections_v2"][
+            "timeline"
+        ]["instructions"][0]["entries"].insert(
+            1,
+            {
+                "entryId": "tweet-reply1",
+                "content": {"itemContent": {"tweet_results": {"result": reply}}},
+            },
+        )
+        thread = x.parse_thread_response(thread_payload, X_TWEET_ID)
+        self.assertEqual(thread["tweet"]["id"], X_TWEET_ID)
+        self.assertEqual(thread["tweet"]["type"], "tweet")
+        self.assertEqual(len(thread["replies"]), 1)
+        self.assertEqual(thread["replies"][0]["text"], "a reply")
+        people = x.parse_search_response(
+            {
+                "data": {
+                    "search_by_raw_query": {
+                        "search_timeline": {
+                            "timeline": {
+                                "instructions": [
+                                    {
+                                        "entries": [
+                                            {
+                                                "entryId": "user-1",
+                                                "content": {
+                                                    "itemContent": {
+                                                        "itemType": "TimelineUser",
+                                                        "user_results": {
+                                                            "result": {
+                                                                "__typename": "User",
+                                                                "rest_id": "13334762",
+                                                                "is_blue_verified": True,
+                                                                "core": {
+                                                                    "name": "GitHub",
+                                                                    "screen_name": "github",
+                                                                },
+                                                                "profile_bio": {
+                                                                    "description": "build software"
+                                                                },
+                                                                "relationship_counts": {
+                                                                    "followers": 1
+                                                                },
+                                                            }
+                                                        },
+                                                    }
+                                                },
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        )
+        self.assertEqual(people["results"][0]["type"], "user")
+        self.assertEqual(people["results"][0]["username"], "github")
+        self.assertEqual(people["results"][0]["url"], "https://x.com/github")
+        self.assertEqual(people["results"][0]["bio"], "build software")
+
+    def test_x_thread_tweetdetail_and_url_parse(self) -> None:
+        transport = ScriptedTransport(
+            X_HOME_HTML, X_ONDEMAND_JS, X_MAIN_JS, X_THREAD_PAYLOAD
+        )
+        out = x.thread(
+            f"https://x.com/{X_USER}/status/{X_TWEET_ID}",
+            auth_token="auth-fixture",
+            ct0="ct0-fixture",
+            cursor="thread-page",
+            transport=transport,
+        )
+        gql = transport.requests[-1]
+        parsed = urlparse(gql.url)
+        self.assertEqual(parsed.path, f"/i/api/graphql/{X_QUERY_DETAIL}/TweetDetail")
+        qs = parse_qs(parsed.query)
+        variables = json.loads(qs["variables"][0])
+        self.assertEqual(variables["focalTweetId"], X_TWEET_ID)
+        self.assertEqual(variables["cursor"], "thread-page")
+        toggles = json.loads(qs["fieldToggles"][0])
+        self.assertTrue(toggles["withArticleRichContentState"])
+        self.assertEqual(out["operation"], "thread")
+        self.assertEqual(out["tweet"]["text"], X_TEXT)
+        self.assertEqual(out["id"], X_TWEET_ID)
+        self.assertEqual(out["cursor"], X_CURSOR)
 
 
 if __name__ == "__main__":

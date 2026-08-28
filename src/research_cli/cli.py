@@ -18,8 +18,9 @@ from research_cli.keys import (
     require_exa_key,
     require_firecrawl_key,
     require_reddit_credentials,
+    require_x_credentials,
 )
-from research_cli.providers import bgpt, brave, exa, exploitdb, firecrawl, malpedia, reddit, sploitus
+from research_cli.providers import bgpt, brave, exa, exploitdb, firecrawl, malpedia, reddit, sploitus, x
 from research_cli.providers import firecrawl_papers as papers
 from research_cli.update import run_self_update, spawn_background_update
 
@@ -28,7 +29,8 @@ DESCRIPTION = (
     "brave search / llm-context, exa search/contents, firecrawl "
     "scrape/search/map/papers, reddit search/thread/subreddit, sploitus "
     "exploit/hacktool search, exploit-db exploits/GHDB/papers/shellcodes, "
-    "and malpedia malware families/actors/YARA/bib/MISP (guest). "
+    "malpedia malware families/actors/YARA/bib/MISP (guest), and x "
+    "(Twitter) search/thread via the logged-in web GraphQL client. "
     "Do not use MCP; run this CLI."
 )
 
@@ -42,6 +44,7 @@ providers:
   sploitus      Sploitus exploit/hacktool search, CVE, product, latest (no API key)
   exploitdb     Exploit-DB search, latest, GHDB, papers, shellcodes (no API key)
   malpedia      Malpedia families, actors, YARA, bib, MISP, references (guest)
+  x             X (Twitter) post search and tweet threads (cookie session)
 
 examples:
   research-cli bgpt search "CRISPR delivery neurons"
@@ -95,6 +98,9 @@ examples:
   research-cli malpedia yara-dump --tlp white --output /tmp --timeout 180
   research-cli malpedia yara-after 2026-01-01
   research-cli malpedia version
+  research-cli x search "VMProtect LLVM" --product latest --count 20
+  research-cli x thread 2069347283918000383
+  research-cli x thread https://x.com/user/status/2069347283918000383
 """
 
 
@@ -645,6 +651,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write the raw JSON body to a file or directory",
     )
     mal_sub.add_parser("version", help="Malpedia catalog version", parents=[shared])
+
+    x_p = sub.add_parser(
+        "x", help="X (Twitter) search and tweet threads (cookie session)"
+    )
+    x_sub = x_p.add_subparsers(dest="operation", required=True)
+    x_search = x_sub.add_parser(
+        "search",
+        help="GraphQL SearchTimeline (Latest/Top/People/Photos)",
+        parents=[shared],
+    )
+    x_search.add_argument("query", help="Search terms (X operators like from:user work)")
+    x_search.add_argument("--count", type=int, default=20, help="Page size (default 20)")
+    x_search.add_argument(
+        "--product",
+        choices=("latest", "top", "people", "media"),
+        default="latest",
+        help="Timeline tab (default latest)",
+    )
+    x_search.add_argument("--cursor", help="Bottom cursor from a previous page")
+    x_thread = x_sub.add_parser(
+        "thread",
+        help="GraphQL TweetDetail for a tweet id or status URL",
+        parents=[shared],
+    )
+    x_thread.add_argument(
+        "target", help="Tweet id or https://x.com/user/status/{id}"
+    )
+    x_thread.add_argument("--cursor", help="Bottom cursor from a previous page")
     return parser
 
 
@@ -1070,6 +1104,39 @@ def _dispatch_malpedia(
     raise ValueError(f"unknown command: malpedia {args.operation}")
 
 
+def _dispatch_x(
+    args: argparse.Namespace,
+    environ: Mapping[str, str],
+    transport: Transport | None,
+    timeout: float,
+) -> dict[str, Any]:
+    auth_token, ct0 = require_x_credentials(environ)
+    origin = _origin(args, environ, x.DEFAULT_ORIGIN)
+    if args.operation == "search":
+        return x.search(
+            args.query,
+            auth_token=auth_token,
+            ct0=ct0,
+            count=args.count,
+            product=args.product,
+            cursor=args.cursor,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if args.operation == "thread":
+        return x.thread(
+            args.target,
+            auth_token=auth_token,
+            ct0=ct0,
+            cursor=args.cursor,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    raise ValueError(f"unknown command: x {args.operation}")
+
+
 def _dispatch(
     args: argparse.Namespace,
     environ: Mapping[str, str],
@@ -1144,6 +1211,8 @@ def _dispatch(
         return _dispatch_exploitdb(args, environ, transport, timeout)
     if args.provider == "malpedia":
         return _dispatch_malpedia(args, environ, transport, timeout)
+    if args.provider == "x":
+        return _dispatch_x(args, environ, transport, timeout)
     raise ValueError(f"unknown command: {args.provider} {getattr(args, 'operation', '')}")
 
 
