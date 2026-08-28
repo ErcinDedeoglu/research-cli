@@ -390,11 +390,14 @@ class SpawnTests(unittest.TestCase):
         cmd, kwargs = self.popen.calls[0]
         self.assertEqual(cmd, [str(self.target), "--self-update"])
         self.assertEqual(kwargs["env"][WAIT_PID_ENV], "4242")
+        self.assertEqual(kwargs["env"]["PYINSTALLER_RESET_ENVIRONMENT"], "1")
         self.assertNotIn("RESEARCH_CLI_NO_UPDATE", kwargs["env"])
         self.assertTrue(kwargs.get("start_new_session") or kwargs.get("creationflags"))
-        self.assertIs(kwargs["stdout"], subprocess.DEVNULL)
-        self.assertIs(kwargs["stderr"], subprocess.DEVNULL)
         self.assertIs(kwargs["stdin"], subprocess.DEVNULL)
+        self.assertEqual(kwargs["stdout"], kwargs["stderr"])
+        stdout = kwargs["stdout"]
+        self.assertNotEqual(stdout, subprocess.DEVNULL)
+        self.assertTrue(str(getattr(stdout, "name", "")).endswith("update.log"))
 
     def test_zipapp_uses_python_interpreter(self) -> None:
         spawned = spawn_background_update(

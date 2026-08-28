@@ -383,6 +383,11 @@ def _child_env(environ: Mapping[str, str], parent_pid: int) -> dict[str, str]:
             env[key] = value
     env[WAIT_PID_ENV] = str(parent_pid)
     env.pop("RESEARCH_CLI_NO_UPDATE", None)
+    # PyInstaller >= 6.9 reuses the parent's onefile _MEIPASS for sys.executable
+    # children. That directory is deleted when --version exits, so the updater
+    # dies unless it is spawned as a new unpack. See PYINSTALLER_RESET_ENVIRONMENT.
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    env.pop("_MEIPASS2", None)
     return env
 
 
@@ -400,10 +405,17 @@ def spawn_background_update(
         return False
     cmd = update_command(install)
     env = _child_env(environ, parent_pid if parent_pid is not None else os.getpid())
+    log_handle: Any = subprocess.DEVNULL
+    try:
+        log_path = cache_dir(environ) / "update.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_handle = log_path.open("ab")
+    except OSError:
+        log_handle = subprocess.DEVNULL
     kwargs: dict[str, Any] = {
         "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
+        "stdout": log_handle,
+        "stderr": log_handle,
         "env": env,
         "close_fds": True,
     }
@@ -415,7 +427,14 @@ def spawn_background_update(
         )
     else:
         kwargs["start_new_session"] = True
-    popen(cmd, **kwargs)
+    try:
+        popen(cmd, **kwargs)
+    finally:
+        if log_handle is not subprocess.DEVNULL:
+            try:
+                log_handle.close()
+            except OSError:
+                pass
     return True
 
 

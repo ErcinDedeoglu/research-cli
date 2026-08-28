@@ -142,7 +142,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | `--base-url` | Override API origin (fixture tests), not a vendor path |
 | `--live` | Firecrawl scrape `maxAge=0` |
 | `--self-update` | Foreground GitHub latest-release replace (always download matching asset) |
-| Background update | After each invocation (including `--version`/`--help`/parse errors), frozen/zipapp spawn detached `--self-update` (waits for parent exit; does not block stdout). `--self-update` itself does not respawn |
+| Background update | After each invocation (including `--version`/`--help`/parse errors), frozen/zipapp spawn detached `--self-update` (waits for parent exit; does not block stdout). Spawn sets `PYINSTALLER_RESET_ENVIRONMENT=1` so onefile children unpack independently (PyInstaller ≥ 6.9). `--self-update` itself does not respawn. Failures append to `~/.cache/research-cli/update.log` |
 | `RESEARCH_CLI_NO_UPDATE` | Disables the post-command spawn; `--self-update` still runs |
 | llm-context | Brave `GET /res/v1/llm/context` — page chunks, not titles-only |
 | papers | Firecrawl research index (`/v2/search/research/papers`), not BGPT |
