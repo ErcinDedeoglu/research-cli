@@ -31,6 +31,10 @@ from fixtures import (  # noqa: E402
     REDDIT_COMMENT_BODY,
     REDDIT_TITLE,
     SPLOITUS_TITLE,
+    EDB_PAPER_TITLE,
+    EDB_SHELLCODE_TITLE,
+    EDB_SOURCE,
+    EDB_TITLE,
     start_fixture_server,
 )
 
@@ -87,6 +91,7 @@ class HelpTests(unittest.TestCase):
         self.assertIn("firecrawl", text)
         self.assertIn("reddit", text)
         self.assertIn("sploitus", text)
+        self.assertIn("exploitdb", text)
         self.assertIn("--self-update", text)
 
     def test_version_prints_package_version(self) -> None:
@@ -173,6 +178,7 @@ class FixtureServerCliTests(unittest.TestCase):
             (["firecrawl", "search", "scraping"], FIRECRAWL_SEARCH_URL),
             (["reddit", "search", "python"], REDDIT_TITLE),
             (["sploitus", "search", "log4j"], SPLOITUS_TITLE),
+            (["exploitdb", "search", "log4j"], EDB_TITLE),
         ]
         for _ in range(2):
             for args, needle in commands:
@@ -225,11 +231,33 @@ class FixtureServerCliTests(unittest.TestCase):
             (["sploitus", "latest"], "Fixture latest exploit"),
             (["sploitus", "autocomplete", "log4"], "log4j"),
             (["sploitus", "home"], "CVE-2025-55182"),
+            (["exploitdb", "search", "log4j", "--type", "remote", "--platform", "java"], EDB_TITLE),
+            (["exploitdb", "latest"], EDB_TITLE),
+            (["exploitdb", "exploit", "50592"], EDB_TITLE),
+            (["exploitdb", "raw", "50592"], EDB_SOURCE.splitlines()[0]),
+            (["exploitdb", "papers", "polkit"], EDB_PAPER_TITLE),
+            (["exploitdb", "paper", "50981"], EDB_PAPER_TITLE),
+            (["exploitdb", "shellcodes", "calc"], EDB_SHELLCODE_TITLE),
+            (["exploitdb", "shellcode", "52599"], EDB_SHELLCODE_TITLE),
+            (["exploitdb", "ghdb", "ganglia"], "Ganglia"),
+            (["exploitdb", "dork", "2"], "Ganglia Cluster Reports"),
+            (["exploitdb", "authors", "leon"], "leonjza"),
+            (["exploitdb", "stats"], "46664"),
         ]
         for args, needle in cases:
             proc = self._cli(*args)
             self.assertEqual(proc.returncode, 0, proc.stderr + str(args))
             self.assertIn(needle, proc.stdout)
+
+    def test_exploitdb_download_writes_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._cli("exploitdb", "download", "50592", "--output", tmp)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            payload = json.loads(proc.stdout)
+            path = Path(payload["path"])
+            self.assertEqual(payload["filename"], "50592.py")
+            self.assertTrue(path.is_file())
+            self.assertEqual(path.read_text(encoding="utf-8"), EDB_SOURCE)
 
 
 if __name__ == "__main__":

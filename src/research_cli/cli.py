@@ -19,15 +19,16 @@ from research_cli.keys import (
     require_firecrawl_key,
     require_reddit_credentials,
 )
-from research_cli.providers import bgpt, brave, exa, firecrawl, reddit, sploitus
+from research_cli.providers import bgpt, brave, exa, exploitdb, firecrawl, reddit, sploitus
 from research_cli.providers import firecrawl_papers as papers
 from research_cli.update import run_self_update, spawn_background_update
 
 DESCRIPTION = (
     "Agent-facing research CLI. Direct HTTP REST calls for bgpt paper search, "
     "brave search / llm-context, exa search/contents, firecrawl "
-    "scrape/search/map/papers, reddit search/thread/subreddit, and sploitus "
-    "exploit/hacktool search, CVE, product, and latest. Do not use MCP; run this CLI."
+    "scrape/search/map/papers, reddit search/thread/subreddit, sploitus "
+    "exploit/hacktool search, and exploit-db exploits/GHDB/papers/shellcodes. "
+    "Do not use MCP; run this CLI."
 )
 
 EPILOG = """\
@@ -38,6 +39,7 @@ providers:
   firecrawl     Firecrawl scrape, search, map, and research papers
   reddit        Reddit post search, thread comments, and subreddit listings (OAuth)
   sploitus      Sploitus exploit/hacktool search, CVE, product, latest (no API key)
+  exploitdb     Exploit-DB search, latest, GHDB, papers, shellcodes (no API key)
 
 examples:
   research-cli bgpt search "CRISPR delivery neurons"
@@ -63,6 +65,19 @@ examples:
   research-cli sploitus latest
   research-cli sploitus home
   research-cli sploitus autocomplete log4
+  research-cli exploitdb search "CVE-2021-44228" --type remote --platform java
+  research-cli exploitdb latest
+  research-cli exploitdb exploit 50592
+  research-cli exploitdb raw 50592
+  research-cli exploitdb download 50592
+  research-cli exploitdb papers "polkit" --language english
+  research-cli exploitdb paper 50981
+  research-cli exploitdb shellcodes "reverse tcp" --platform linux
+  research-cli exploitdb shellcode 52599
+  research-cli exploitdb ghdb "inurl:admin" --category 9
+  research-cli exploitdb dork 2
+  research-cli exploitdb authors leon
+  research-cli exploitdb stats
 """
 
 
@@ -372,6 +387,106 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[shared],
     )
     sploitus_ac.add_argument("query", help="Partial query")
+
+    edb_p = sub.add_parser(
+        "exploitdb", help="Exploit-DB exploits, GHDB, papers, and shellcodes"
+    )
+    edb_sub = edb_p.add_subparsers(dest="operation", required=True)
+    edb_search = edb_sub.add_parser(
+        "search", help="Search exploits (DataTables JSON)", parents=[shared]
+    )
+    edb_search.add_argument("query", help="Title terms")
+    edb_search.add_argument(
+        "--type",
+        dest="search_type",
+        default=None,
+        choices=exploitdb.SEARCH_TYPES,
+        help="UI type: dos, local, remote, shellcode, papers, webapps, hardware",
+    )
+    edb_search.add_argument("--platform", help="UI platform slug (java, php, windows, …)")
+    edb_search.add_argument("--port", help="UI port filter")
+    edb_search.add_argument("--cve", help="CVE-YYYY-NNNNN or YYYY-NNNNN")
+    edb_search.add_argument("--text", help="Full-text exploit content")
+    edb_search.add_argument("--author", help="Author name or numeric id")
+    edb_search.add_argument("--tag", help="Tag id or name (sqli, xss, poc, …)")
+    edb_search.add_argument("--verified", action="store_true")
+    edb_search.add_argument("--hasapp", action="store_true", help="Has vulnerable app attached")
+    edb_search.add_argument("--nomsf", action="store_true", help="Exclude Metasploit")
+    edb_search.add_argument("--offset", type=int, default=0)
+    edb_search.add_argument("--limit", type=int, default=15)
+    edb_latest = edb_sub.add_parser(
+        "latest", help="Homepage latest exploits", parents=[shared]
+    )
+    edb_latest.add_argument("--offset", type=int, default=0)
+    edb_latest.add_argument("--limit", type=int, default=15)
+    edb_exploit = edb_sub.add_parser(
+        "exploit", help="Exploit hub /exploits/{id}", parents=[shared]
+    )
+    edb_exploit.add_argument("target", help="EDB id or https://www.exploit-db.com/exploits/…")
+    edb_raw = edb_sub.add_parser(
+        "raw", help="Plain-text PoC /raw/{id}", parents=[shared]
+    )
+    edb_raw.add_argument("target", help="EDB id")
+    edb_download = edb_sub.add_parser(
+        "download",
+        help="Save /download/{id} to disk (exploit, paper, shellcode, or attached app)",
+        parents=[shared],
+    )
+    edb_download.add_argument("target", help="EDB id")
+    edb_download.add_argument(
+        "--output",
+        "-o",
+        help="File or directory (default: cwd, name from Content-Disposition)",
+    )
+    edb_papers = edb_sub.add_parser(
+        "papers", help="Papers table /papers", parents=[shared]
+    )
+    edb_papers.add_argument("query", nargs="?", default=None, help="Quick search")
+    edb_papers.add_argument("--language", help="UI language (english, arabic, spanish, …)")
+    edb_papers.add_argument("--platform", help="UI platform slug")
+    edb_papers.add_argument("--author", help="Author numeric id")
+    edb_papers.add_argument("--offset", type=int, default=0)
+    edb_papers.add_argument("--limit", type=int, default=15)
+    edb_paper = edb_sub.add_parser(
+        "paper", help="Paper hub /docs/{id}", parents=[shared]
+    )
+    edb_paper.add_argument("target", help="Paper EDB id")
+    edb_shellcodes = edb_sub.add_parser(
+        "shellcodes", help="Shellcodes table /shellcodes", parents=[shared]
+    )
+    edb_shellcodes.add_argument("query", nargs="?", default=None, help="Quick search")
+    edb_shellcodes.add_argument("--platform", help="UI platform slug")
+    edb_shellcodes.add_argument("--author", help="Author numeric id")
+    edb_shellcodes.add_argument("--offset", type=int, default=0)
+    edb_shellcodes.add_argument("--limit", type=int, default=15)
+    edb_shellcode = edb_sub.add_parser(
+        "shellcode", help="Shellcode hub /shellcodes/{id}", parents=[shared]
+    )
+    edb_shellcode.add_argument("target", help="Shellcode EDB id")
+    edb_ghdb = edb_sub.add_parser(
+        "ghdb", help="Google Hacking Database", parents=[shared]
+    )
+    edb_ghdb.add_argument("query", nargs="?", default=None, help="Quick search / dork text")
+    edb_ghdb.add_argument(
+        "--category",
+        help="Category id 1-14 or title (e.g. 9 or 'Files Containing Passwords')",
+    )
+    edb_ghdb.add_argument("--author", help="Author numeric id")
+    edb_ghdb.add_argument("--offset", type=int, default=0)
+    edb_ghdb.add_argument("--limit", type=int, default=15)
+    edb_dork = edb_sub.add_parser(
+        "dork", help="GHDB dork /ghdb/{id}", parents=[shared]
+    )
+    edb_dork.add_argument("target", help="GHDB id")
+    edb_authors = edb_sub.add_parser(
+        "authors", help="Author typeahead or lookup by id", parents=[shared]
+    )
+    edb_authors.add_argument("query", help="Name fragment or numeric author id")
+    edb_sub.add_parser(
+        "stats",
+        help="Database counts (exploits/papers/shellcodes/GHDB)",
+        parents=[shared],
+    )
     return parser
 
 
@@ -596,6 +711,112 @@ def _dispatch_sploitus(
     raise ValueError(f"unknown command: sploitus {args.operation}")
 
 
+def _dispatch_exploitdb(
+    args: argparse.Namespace,
+    environ: Mapping[str, str],
+    transport: Transport | None,
+    timeout: float,
+) -> dict[str, Any]:
+    origin = _origin(args, environ, exploitdb.DEFAULT_ORIGIN)
+    op = args.operation
+    if op == "search":
+        return exploitdb.search(
+            args.query,
+            search_type=args.search_type,
+            platform=args.platform,
+            port=args.port,
+            cve=args.cve,
+            text=args.text,
+            author=args.author,
+            tag=args.tag,
+            verified=args.verified,
+            hasapp=args.hasapp,
+            nomsf=args.nomsf,
+            offset=args.offset,
+            limit=args.limit,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "latest":
+        return exploitdb.latest(
+            offset=args.offset,
+            limit=args.limit,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "exploit":
+        return exploitdb.exploit(
+            args.target, origin=origin, transport=transport, timeout=timeout
+        )
+    if op == "raw":
+        return exploitdb.raw(
+            args.target, origin=origin, transport=transport, timeout=timeout
+        )
+    if op == "download":
+        return exploitdb.download(
+            args.target,
+            output=args.output,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "papers":
+        return exploitdb.papers(
+            args.query,
+            language=args.language,
+            platform=args.platform,
+            author=args.author,
+            offset=args.offset,
+            limit=args.limit,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "paper":
+        return exploitdb.paper(
+            args.target, origin=origin, transport=transport, timeout=timeout
+        )
+    if op == "shellcodes":
+        return exploitdb.shellcodes(
+            args.query,
+            platform=args.platform,
+            author=args.author,
+            offset=args.offset,
+            limit=args.limit,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "shellcode":
+        return exploitdb.shellcode(
+            args.target, origin=origin, transport=transport, timeout=timeout
+        )
+    if op == "ghdb":
+        return exploitdb.ghdb(
+            args.query,
+            category=args.category,
+            author=args.author,
+            offset=args.offset,
+            limit=args.limit,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "dork":
+        return exploitdb.dork(
+            args.target, origin=origin, transport=transport, timeout=timeout
+        )
+    if op == "authors":
+        return exploitdb.authors(
+            args.query, origin=origin, transport=transport, timeout=timeout
+        )
+    if op == "stats":
+        return exploitdb.stats(origin=origin, transport=transport, timeout=timeout)
+    raise ValueError(f"unknown command: exploitdb {args.operation}")
+
+
 def _dispatch(
     args: argparse.Namespace,
     environ: Mapping[str, str],
@@ -666,6 +887,8 @@ def _dispatch(
         return _dispatch_reddit(args, environ, transport, timeout)
     if args.provider == "sploitus":
         return _dispatch_sploitus(args, environ, transport, timeout)
+    if args.provider == "exploitdb":
+        return _dispatch_exploitdb(args, environ, transport, timeout)
     raise ValueError(f"unknown command: {args.provider} {getattr(args, 'operation', '')}")
 
 

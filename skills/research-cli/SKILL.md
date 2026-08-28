@@ -6,14 +6,14 @@ description: >
   look up, find, google, investigate, cite, gather sources, check the web, or
   find papers/literature — run this CLI and call EVERY provider in parallel
   (bgpt, brave, exa, firecrawl, reddit). For CVE, exploit, PoC, RCE, or hacktool
-  queries, also run sploitus. Do not pick one. Do not guess or use vendor MCP.
+  queries, also run sploitus and exploitdb. Do not pick one. Do not guess or use vendor MCP.
   Triggers: search, research, papers, literature, scrape, lookup, google, cite,
-  sources, bgpt, brave, exa, firecrawl, reddit, sploitus, /research-cli.
+  sources, bgpt, brave, exa, firecrawl, reddit, sploitus, exploitdb, /research-cli.
 ---
 
 # research-cli
 
-Do not call BGPT, Brave, Exa, Firecrawl, Reddit, or Sploitus MCP servers. Run this CLI.
+Do not call BGPT, Brave, Exa, Firecrawl, Reddit, Sploitus, or Exploit-DB MCP servers. Run this CLI.
 
 ## Version guard
 
@@ -76,11 +76,12 @@ For CVE, exploit, PoC, RCE, or hacktool queries, also run:
 
 ```bash
 research-cli sploitus search "QUERY"
+research-cli exploitdb search "QUERY"
 ```
 
-Merge the JSON. Then scrape/read specific URLs or paper IDs if needed. For Reddit, search then `reddit thread` on the best permalinks; `reddit subreddit` to browse a community. For Sploitus: `search` then `exploit` on an id for the full PoC (CVSS, EPSS, entry point, tags, related); `cve` / `product` / `latest` / `home` for the HTML hubs; `autocomplete` for typeahead. Pass `--source` on search when you need PoC bodies in the hit list; `--type tools` searches hacktools.
+Merge the JSON. Then scrape/read specific URLs or paper IDs if needed. For Reddit, search then `reddit thread` on the best permalinks; `reddit subreddit` to browse a community. For Sploitus: `search` then `exploit` on an id for the full PoC (CVSS, EPSS, entry point, tags, related); `cve` / `product` / `latest` / `home` for the HTML hubs; `autocomplete` for typeahead. Pass `--source` on search when you need PoC bodies in the hit list; `--type tools` searches hacktools. For Exploit-DB: `search` then `exploit` / `raw` for the OffSec PoC; `download` writes `/download/{id}` to disk (exploit, paper PDF, shellcode, or attached app); `latest` is the homepage table; `ghdb` / `dork` for Google dorks; `papers` / `paper` and `shellcodes` / `shellcode` for those databases; `authors` typeahead; `stats` for counts. Pass `--output` as a file or directory.
 
-**bgpt** papers (optional `BGPT_API_KEY`). **brave** `llm-context` is page chunks (`BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`); `search` is titles/URLs. **exa** semantic search (`EXA_API_KEY`). **firecrawl** web search + paper index (`FIRECRAWL_API_KEY`). **reddit** posts + comments (`REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET`). **sploitus** exploit/hacktool index (no key).
+**bgpt** papers (optional `BGPT_API_KEY`). **brave** `llm-context` is page chunks (`BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`); `search` is titles/URLs. **exa** semantic search (`EXA_API_KEY`). **firecrawl** web search + paper index (`FIRECRAWL_API_KEY`). **reddit** posts + comments (`REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET`). **sploitus** exploit/hacktool index (no key). **exploitdb** OffSec Exploit Database (no key).
 
 ## Commands
 
@@ -112,6 +113,19 @@ research-cli sploitus product wordpress --limit 50
 research-cli sploitus latest --limit 25
 research-cli sploitus home
 research-cli sploitus autocomplete log4
+research-cli exploitdb search "CVE-2021-44228" --type remote --platform java
+research-cli exploitdb latest
+research-cli exploitdb exploit 50592
+research-cli exploitdb raw 50592
+research-cli exploitdb download 50592 --output /tmp
+research-cli exploitdb papers "polkit" --language english
+research-cli exploitdb paper 50981
+research-cli exploitdb shellcodes "reverse tcp" --platform linux
+research-cli exploitdb shellcode 52599
+research-cli exploitdb ghdb "inurl:admin" --category 9
+research-cli exploitdb dork 2
+research-cli exploitdb authors leon
+research-cli exploitdb stats
 ```
 
 `--base-url` overrides the API origin (local fixture servers). Output is JSON on stdout. `--version` prints SemVer.
@@ -126,5 +140,6 @@ research-cli sploitus autocomplete log4
 | firecrawl | `FIRECRAWL_API_KEY` | yes |
 | reddit | `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` | yes |
 | sploitus | none | no |
+| exploitdb | none | no |
 
-Missing Brave, Exa, Firecrawl, or Reddit keys exit non-zero and name the provider. BGPT and Sploitus HTTP error bodies are printed on failure.
+Missing Brave, Exa, Firecrawl, or Reddit keys exit non-zero and name the provider. BGPT, Sploitus, and Exploit-DB HTTP error bodies are printed on failure.

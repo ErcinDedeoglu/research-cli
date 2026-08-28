@@ -340,6 +340,145 @@ REDDIT_THREAD_PAYLOAD = [
     },
 ]
 
+EDB_TITLE = "Fixture EDB Log4j RCE"
+EDB_ID = "50592"
+EDB_PAPER_TITLE = "Fixture EDB Polkit Paper"
+EDB_PAPER_ID = "50981"
+EDB_SHELLCODE_TITLE = "Fixture EDB Calc Shellcode"
+EDB_SHELLCODE_ID = "52599"
+EDB_DORK_TITLE = 'intitle:"Ganglia" "Cluster Report for"'
+EDB_DORK_ID = "2"
+EDB_AUTHOR_NAME = "leonjza"
+EDB_SOURCE = "# Exploit Title: Fixture EDB Log4j RCE\nprint('fixture edb poc')"
+EDB_SEARCH_PAYLOAD = {
+    "draw": 1,
+    "recordsTotal": 2,
+    "recordsFiltered": 2,
+    "data": [
+        {
+            "id": EDB_ID,
+            "description": [EDB_ID, EDB_TITLE],
+            "type_id": "remote",
+            "platform_id": "Java",
+            "author_id": ["8870", EDB_AUTHOR_NAME],
+            "date_published": "2021-12-14",
+            "verified": 0,
+            "port": 0,
+            "tags": [{"id": "29", "title": "Proof of Concept (PoC)"}],
+            "code": [{"code_type": "cve", "code": "2021-44228"}],
+            "author": {"id": "8870", "name": EDB_AUTHOR_NAME},
+            "type": {"id": "3", "name": "remote", "display": "Remote"},
+            "platform": {"id": "50", "platform": "Java"},
+        }
+    ],
+}
+EDB_LATEST_PAYLOAD = {
+    "draw": 1,
+    "recordsTotal": 46664,
+    "recordsFiltered": 46664,
+    "data": EDB_SEARCH_PAYLOAD["data"],
+}
+EDB_PAPERS_PAYLOAD = {
+    "draw": 1,
+    "recordsTotal": 1682,
+    "recordsFiltered": 1,
+    "data": [
+        {
+            "id": EDB_PAPER_ID,
+            "description": f'<a href="/docs/{EDB_PAPER_ID}">{EDB_PAPER_TITLE}</a>',
+            "platform_id": "Linux",
+            "author_id": ["10939", "Rushil Saxena"],
+            "date_published": "2021-12-10",
+            "lang_id": "English",
+            "file_type": "attachment",
+            "language": {"id": "1", "name": "English"},
+            "author": {"id": "10939", "name": "Rushil Saxena"},
+            "platform": {"id": "16", "platform": "Linux"},
+        }
+    ],
+}
+EDB_SHELLCODES_PAYLOAD = {
+    "draw": 1,
+    "recordsTotal": 1068,
+    "recordsFiltered": 1,
+    "data": [
+        {
+            "id": EDB_SHELLCODE_ID,
+            "description": f'<a href="/shellcodes/{EDB_SHELLCODE_ID}"><span>{EDB_SHELLCODE_TITLE}</span></a>',
+            "platform_id": "Windows",
+            "author_id": ["12136", "Fernando Mengali"],
+            "date_published": "2026-05-29",
+            "verified": 0,
+            "author": {"id": "12136", "name": "Fernando Mengali"},
+            "platform": {"id": "45", "platform": "Windows"},
+        }
+    ],
+}
+EDB_GHDB_PAYLOAD = {
+    "draw": 1,
+    "recordsTotal": 7944,
+    "recordsFiltered": 1,
+    "data": [
+        {
+            "id": EDB_DORK_ID,
+            "date": "2003-06-24",
+            "url_title": f'<a href="/ghdb/{EDB_DORK_ID}">{EDB_DORK_TITLE}</a>',
+            "cat_id": ["8", "Files Containing Juicy Info"],
+            "author_id": ["2168", "anonymous"],
+            "author": {"id": "2168", "name": "anonymous"},
+            "category": {
+                "cat_id": "8",
+                "cat_title": "Files Containing Juicy Info",
+            },
+        }
+    ],
+}
+EDB_AUTHORS_PAYLOAD = [{"id": 8870, "name": EDB_AUTHOR_NAME}]
+EDB_AUTHOR_PAYLOAD = {"data": {"id": 8870, "name": EDB_AUTHOR_NAME}}
+EDB_EXPLOIT_HTML = f"""<html><head>
+<title>{EDB_TITLE} - Java remote Exploit</title>
+<meta name="author" content="{EDB_AUTHOR_NAME}">
+</head><body>
+<h1 class="card-title">{EDB_TITLE}</h1>
+<h4 class="info-title">EDB-ID:</h4><h6 class="stats-title">{EDB_ID}</h6>
+<h4 class="info-title">CVE:</h4><h6 class="stats-title"><a>2021-44228</a></h6>
+<h4 class="info-title">Author:</h4><h6 class="stats-title"><a href="/?author=8870">{EDB_AUTHOR_NAME}</a></h6>
+<h4 class="info-title">Type:</h4><h6 class="stats-title"><a href="/?type=remote">remote</a></h6>
+<h4 class="info-title">Platform:</h4><h6 class="stats-title">Java</h6>
+<h4 class="info-title">Date:</h4><h6 class="stats-title">2021-12-14</h6>
+<strong>EDB Verified:</strong><i class="mdi mdi-close"></i>
+<a href="/download/{EDB_ID}">download</a>
+<a href="/raw/{EDB_ID}">raw</a>
+<pre><code>{EDB_SOURCE}</code></pre>
+</body></html>"""
+EDB_PAPER_HTML = f"""<html><body>
+<h1 class="card-title">{EDB_PAPER_TITLE}</h1>
+<h4 class="info-title">EDB-ID:</h4><h6 class="stats-title">{EDB_PAPER_ID}</h6>
+<h4 class="info-title">Author:</h4><h6 class="stats-title">Rushil Saxena</h6>
+<h4 class="info-title">Platform:</h4><h6 class="stats-title">Linux</h6>
+<h4 class="info-title">Date:</h4><h6 class="stats-title">2021-12-10</h6>
+<a href="/download/{EDB_PAPER_ID}">download</a>
+</body></html>"""
+EDB_SHELLCODE_HTML = f"""<html><body>
+<h1 class="card-title">{EDB_SHELLCODE_TITLE}</h1>
+<h4 class="info-title">EDB-ID:</h4><h6 class="stats-title">{EDB_SHELLCODE_ID}</h6>
+<h4 class="info-title">Author:</h4><h6 class="stats-title">Fernando Mengali</h6>
+<h4 class="info-title">Type:</h4><h6 class="stats-title">shellcode</h6>
+<h4 class="info-title">Platform:</h4><h6 class="stats-title">Windows</h6>
+<h4 class="info-title">Date:</h4><h6 class="stats-title">2026-05-29</h6>
+<a href="/download/{EDB_SHELLCODE_ID}">download</a>
+<a href="/raw/{EDB_SHELLCODE_ID}">raw</a>
+<pre><code>xor eax, eax</code></pre>
+</body></html>"""
+EDB_DORK_HTML = f"""<html><body>
+<h1 class="card-title">Ganglia Cluster Reports</h1>
+<h4 class="info-title">GHDB-ID:</h4><h6 class="stats-title">{EDB_DORK_ID}</h6>
+<h4 class="info-title">Author:</h4><h6 class="stats-title">anonymous</h6>
+<h4 class="info-title">Published:</h4><h6 class="stats-title">2003-06-24</h6>
+<pre>These are server cluster reports, great for info gathering.</pre>
+</body></html>"""
+
+
 _POST_ROUTES = {
     "/api/mcp-search": BGPT_PAYLOAD,
     "/search": EXA_SEARCH_PAYLOAD,
@@ -374,12 +513,67 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _send_text(self, text: str, content_type: str = "text/plain; charset=UTF-8") -> None:
+        raw = text.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
     def log_message(self, format: str, *args: object) -> None:  # noqa: A003
         return
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
+        xhr = self.headers.get("X-Requested-With")
+        if xhr == "XMLHttpRequest":
+            if path == "/search":
+                self._send(200, EDB_SEARCH_PAYLOAD)
+                return
+            if path == "/":
+                self._send(200, EDB_LATEST_PAYLOAD)
+                return
+            if path == "/papers":
+                self._send(200, EDB_PAPERS_PAYLOAD)
+                return
+            if path == "/shellcodes":
+                self._send(200, EDB_SHELLCODES_PAYLOAD)
+                return
+            if path == "/google-hacking-database":
+                self._send(200, EDB_GHDB_PAYLOAD)
+                return
+            if path == "/authors-ajax":
+                self._send(200, EDB_AUTHORS_PAYLOAD)
+                return
+            if path.startswith("/api/authorid/"):
+                self._send(200, EDB_AUTHOR_PAYLOAD)
+                return
+        if path == f"/exploits/{EDB_ID}":
+            self._send_html(EDB_EXPLOIT_HTML)
+            return
+        if path == f"/raw/{EDB_ID}":
+            self._send_text(EDB_SOURCE)
+            return
+        if path == f"/download/{EDB_ID}":
+            raw = EDB_SOURCE.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/txt")
+            self.send_header("Content-Disposition", 'attachment; filename="50592.py')
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if path == f"/docs/{EDB_PAPER_ID}":
+            self._send_html(EDB_PAPER_HTML)
+            return
+        if path == f"/shellcodes/{EDB_SHELLCODE_ID}":
+            self._send_html(EDB_SHELLCODE_HTML)
+            return
+        if path == f"/ghdb/{EDB_DORK_ID}":
+            self._send_html(EDB_DORK_HTML)
+            return
         if path == "/res/v1/web/search":
             self._send(200, BRAVE_PAYLOAD)
             return

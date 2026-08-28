@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -11,7 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from research_cli.errors import ProviderHttpError  # noqa: E402
 from research_cli.http import HttpResponse  # noqa: E402
-from research_cli.providers import bgpt, brave, exa, firecrawl, reddit, sploitus  # noqa: E402
+from research_cli.providers import bgpt, brave, exa, exploitdb, firecrawl, reddit, sploitus  # noqa: E402
 
 from research_cli.providers import firecrawl_papers as papers  # noqa: E402
 
@@ -79,6 +80,27 @@ from fixtures import (  # noqa: E402
     SPLOITUS_TOOL_ID,
     SPLOITUS_TOOL_PAYLOAD,
     SPLOITUS_TOOL_TITLE,
+    EDB_AUTHOR_NAME,
+    EDB_AUTHOR_PAYLOAD,
+    EDB_AUTHORS_PAYLOAD,
+    EDB_DORK_HTML,
+    EDB_DORK_ID,
+    EDB_DORK_TITLE,
+    EDB_EXPLOIT_HTML,
+    EDB_GHDB_PAYLOAD,
+    EDB_ID,
+    EDB_LATEST_PAYLOAD,
+    EDB_PAPER_HTML,
+    EDB_PAPER_ID,
+    EDB_PAPER_TITLE,
+    EDB_PAPERS_PAYLOAD,
+    EDB_SEARCH_PAYLOAD,
+    EDB_SHELLCODE_HTML,
+    EDB_SHELLCODE_ID,
+    EDB_SHELLCODE_TITLE,
+    EDB_SHELLCODES_PAYLOAD,
+    EDB_SOURCE,
+    EDB_TITLE,
 )
 
 
@@ -679,6 +701,145 @@ class ProviderClientTests(unittest.TestCase):
         self.assertEqual(out["widgets"]["trending_cves"][0]["id"], "CVE-2025-55182")
         self.assertEqual(out["widgets"]["trending_cves"][0]["severity"], "CRITICAL 10.0")
         self.assertEqual(out["results"][0]["title"], "Fixture latest exploit")
+
+    def test_exploitdb_search_xhr_header_and_filters(self) -> None:
+        transport = CapturingTransport(EDB_SEARCH_PAYLOAD)
+        out = exploitdb.search(
+            "log4j",
+            search_type="remote",
+            platform="Java",
+            cve="CVE-2021-44228",
+            tag="poc",
+            verified=True,
+            transport=transport,
+        )
+        req = transport.request
+        parsed = urlparse(req.url)
+        query = parse_qs(parsed.query)
+        self.assertEqual(req.method, "GET")
+        self.assertEqual(parsed.hostname, "www.exploit-db.com")
+        self.assertEqual(parsed.path, "/search")
+        self.assertEqual(req.headers.get("X-Requested-With"), "XMLHttpRequest")
+        self.assertEqual(req.headers.get("Referer"), "https://www.exploit-db.com/")
+        self.assertEqual(query.get("q"), ["log4j"])
+        self.assertEqual(query.get("order[0][column]"), ["0"])
+        self.assertEqual(query.get("order[0][dir]"), ["desc"])
+        self.assertEqual(query.get("type"), ["remote"])
+        self.assertEqual(query.get("platform"), ["java"])
+        self.assertEqual(query.get("cve"), ["2021-44228"])
+        self.assertEqual(query.get("tag"), ["29"])
+        self.assertEqual(query.get("verified"), ["1"])
+        hit = out["results"][0]
+        self.assertEqual(out["provider"], "exploitdb")
+        self.assertEqual(hit["id"], EDB_ID)
+        self.assertEqual(hit["title"], EDB_TITLE)
+        self.assertEqual(hit["cve"], ["CVE-2021-44228"])
+        self.assertEqual(hit["url"], f"https://www.exploit-db.com/exploits/{EDB_ID}")
+
+    def test_exploitdb_latest_and_table_hubs(self) -> None:
+        latest_t = CapturingTransport(EDB_LATEST_PAYLOAD)
+        latest_out = exploitdb.latest(transport=latest_t)
+        latest_q = parse_qs(urlparse(latest_t.request.url).query)
+        self.assertEqual(urlparse(latest_t.request.url).path, "/")
+        self.assertEqual(latest_q.get("order[0][column]"), ["9"])
+        self.assertEqual(latest_out["operation"], "latest")
+        self.assertEqual(latest_out["total"], 46664)
+        cve_t = CapturingTransport(EDB_SEARCH_PAYLOAD)
+        exploitdb.search("CVE-2021-44228", transport=cve_t)
+        cve_q = parse_qs(urlparse(cve_t.request.url).query)
+        self.assertEqual(cve_q.get("cve"), ["2021-44228"])
+        self.assertNotIn("q", cve_q)
+        papers_t = CapturingTransport(EDB_PAPERS_PAYLOAD)
+        papers_out = exploitdb.papers("polkit", language="English", transport=papers_t)
+        pq = parse_qs(urlparse(papers_t.request.url).query)
+        self.assertEqual(urlparse(papers_t.request.url).path, "/papers")
+        self.assertEqual(pq.get("search[value]"), ["polkit"])
+        self.assertEqual(pq.get("lang"), ["english"])
+        self.assertEqual(papers_out["results"][0]["title"], EDB_PAPER_TITLE)
+        shells_t = CapturingTransport(EDB_SHELLCODES_PAYLOAD)
+        shells = exploitdb.shellcodes("calc", platform="windows", transport=shells_t)
+        self.assertEqual(urlparse(shells_t.request.url).path, "/shellcodes")
+        self.assertEqual(shells["results"][0]["id"], EDB_SHELLCODE_ID)
+        ghdb_t = CapturingTransport(EDB_GHDB_PAYLOAD)
+        ghdb_out = exploitdb.ghdb("ganglia", category="Files Containing Juicy Info", transport=ghdb_t)
+        gq = parse_qs(urlparse(ghdb_t.request.url).query)
+        self.assertEqual(urlparse(ghdb_t.request.url).path, "/google-hacking-database")
+        self.assertEqual(gq.get("category"), ["8"])
+        self.assertEqual(ghdb_out["results"][0]["title"], EDB_DORK_TITLE)
+
+    def test_exploitdb_hubs_raw_authors_stats(self) -> None:
+        exploit_out = exploitdb.exploit(
+            "EDB-ID:50592", transport=HtmlTransport(EDB_EXPLOIT_HTML)
+        )
+        self.assertEqual(exploit_out["id"], EDB_ID)
+        self.assertEqual(exploit_out["title"], EDB_TITLE)
+        self.assertEqual(exploit_out["cve"], ["CVE-2021-44228"])
+        self.assertIn("fixture edb poc", exploit_out["source"])
+        paper_out = exploitdb.paper(EDB_PAPER_ID, transport=HtmlTransport(EDB_PAPER_HTML))
+        self.assertEqual(paper_out["id"], EDB_PAPER_ID)
+        self.assertEqual(paper_out["title"], EDB_PAPER_TITLE)
+        shell_out = exploitdb.shellcode(
+            EDB_SHELLCODE_ID, transport=HtmlTransport(EDB_SHELLCODE_HTML)
+        )
+        self.assertEqual(shell_out["title"], EDB_SHELLCODE_TITLE)
+        dork_out = exploitdb.dork(EDB_DORK_ID, transport=HtmlTransport(EDB_DORK_HTML))
+        self.assertEqual(dork_out["id"], EDB_DORK_ID)
+        self.assertIn("cluster reports", dork_out["dork"].lower())
+        raw_t = CapturingTransport({"unused": True})
+
+        def raw_send(request):
+            raw_t.request = request
+            return HttpResponse(
+                status=200,
+                headers={"Content-Type": "text/plain; charset=UTF-8"},
+                body=EDB_SOURCE.encode("utf-8"),
+            )
+
+        raw_out = exploitdb.raw(EDB_ID, transport=raw_send)
+        self.assertEqual(urlparse(raw_t.request.url).path, f"/raw/{EDB_ID}")
+        self.assertEqual(raw_out["source"], EDB_SOURCE)
+        authors_t = CapturingTransport(EDB_AUTHORS_PAYLOAD)
+        authors_out = exploitdb.authors("leon", transport=authors_t)
+        self.assertEqual(urlparse(authors_t.request.url).path, "/authors-ajax")
+        self.assertEqual(authors_out["results"][0]["name"], EDB_AUTHOR_NAME)
+        by_id = exploitdb.authors("8870", transport=CapturingTransport(EDB_AUTHOR_PAYLOAD))
+        self.assertEqual(by_id["results"][0]["id"], "8870")
+        stats_t = SequentialTransport(
+            EDB_LATEST_PAYLOAD, EDB_PAPERS_PAYLOAD, EDB_SHELLCODES_PAYLOAD, EDB_GHDB_PAYLOAD
+        )
+        stats_out = exploitdb.stats(transport=stats_t)
+        self.assertEqual(stats_out["counts"]["exploits"], 46664)
+        self.assertEqual(stats_out["counts"]["papers"], 1682)
+        self.assertEqual(len(stats_t.requests), 4)
+
+    def test_exploitdb_download_writes_disposition_filename(self) -> None:
+        captured = {}
+
+        def send(request):
+            captured["request"] = request
+            return HttpResponse(
+                status=200,
+                headers={
+                    "Content-Type": "application/txt",
+                    "Content-Disposition": 'attachment; filename="50592.py',
+                },
+                body=EDB_SOURCE.encode("utf-8"),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = exploitdb.download(EDB_ID, output=tmp, transport=send)
+            path = Path(out["path"])
+            self.assertEqual(urlparse(captured["request"].url).path, f"/download/{EDB_ID}")
+            self.assertEqual(out["filename"], "50592.py")
+            self.assertEqual(out["size"], len(EDB_SOURCE.encode("utf-8")))
+            self.assertEqual(path.read_text(encoding="utf-8"), EDB_SOURCE)
+            self.assertEqual(
+                exploitdb.filename_from_headers(
+                    {"content-disposition": 'attachment; filename="50592.py'},
+                    EDB_ID,
+                ),
+                "50592.py",
+            )
 
 
 if __name__ == "__main__":
