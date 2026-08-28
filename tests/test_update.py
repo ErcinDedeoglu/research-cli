@@ -486,6 +486,31 @@ class AfterCommandTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(scheduled, [1])
 
+    def test_version_help_and_parse_error_still_schedule(self) -> None:
+        for argv, expected in (
+            (["--version"], 0),
+            (["--help"], 0),
+            ([], 2),
+        ):
+            scheduled: list[int] = []
+            buf = io.StringIO()
+            old_out, old_err = sys.stdout, sys.stderr
+            try:
+                sys.stdout = buf
+                sys.stderr = buf
+                code = main(
+                    argv,
+                    environ={},
+                    stdout=buf,
+                    stderr=buf,
+                    spawn_update=lambda _e: scheduled.append(1),
+                )
+            finally:
+                sys.stdout = old_out
+                sys.stderr = old_err
+            self.assertEqual(code, expected, argv)
+            self.assertEqual(scheduled, [1], argv)
+
     def test_self_update_does_not_reschedule(self) -> None:
         scheduled: list[int] = []
         code = main(

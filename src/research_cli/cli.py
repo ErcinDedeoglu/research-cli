@@ -1185,8 +1185,9 @@ def main(
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
-        code = exc.code
-        return 0 if code is None else int(code)
+        code = 0 if exc.code is None else int(exc.code)
+        _schedule_update(environ, spawn_update)
+        return code
     code = 0
     try:
         result = _dispatch(args, environ, transport)
