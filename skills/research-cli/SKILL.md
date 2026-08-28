@@ -5,14 +5,15 @@ description: >
   MUST USE for search and research. Whenever the user asks to search, research,
   look up, find, google, investigate, cite, gather sources, check the web, or
   find papers/literature — run this CLI and call EVERY provider in parallel
-  (bgpt, brave, exa, firecrawl, reddit). Do not pick one. Do not guess or use
-  vendor MCP. Triggers: search, research, papers, literature, scrape, lookup,
-  google, cite, sources, bgpt, brave, exa, firecrawl, reddit, /research-cli.
+  (bgpt, brave, exa, firecrawl, reddit). For CVE, exploit, PoC, RCE, or hacktool
+  queries, also run sploitus. Do not pick one. Do not guess or use vendor MCP.
+  Triggers: search, research, papers, literature, scrape, lookup, google, cite,
+  sources, bgpt, brave, exa, firecrawl, reddit, sploitus, /research-cli.
 ---
 
 # research-cli
 
-Do not call BGPT, Brave, Exa, Firecrawl, or Reddit MCP servers. Run this CLI.
+Do not call BGPT, Brave, Exa, Firecrawl, Reddit, or Sploitus MCP servers. Run this CLI.
 
 ## Version guard
 
@@ -71,9 +72,15 @@ research-cli firecrawl papers search "QUERY"
 research-cli reddit search "QUERY"
 ```
 
-Merge the JSON. Then scrape/read specific URLs or paper IDs if needed. For Reddit, search then `reddit thread` on the best permalinks; `reddit subreddit` to browse a community.
+For CVE, exploit, PoC, RCE, or hacktool queries, also run:
 
-**bgpt** papers (optional `BGPT_API_KEY`). **brave** `llm-context` is page chunks (`BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`); `search` is titles/URLs. **exa** semantic search (`EXA_API_KEY`). **firecrawl** web search + paper index (`FIRECRAWL_API_KEY`). **reddit** posts + comments (`REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET`).
+```bash
+research-cli sploitus search "QUERY"
+```
+
+Merge the JSON. Then scrape/read specific URLs or paper IDs if needed. For Reddit, search then `reddit thread` on the best permalinks; `reddit subreddit` to browse a community. For Sploitus: `search` then `exploit` on an id for the full PoC; `cve` / `product` / `latest` for the HTML hubs; `autocomplete` for typeahead. Pass `--source` on search when you need PoC bodies in the hit list; `--type tools` searches hacktools.
+
+**bgpt** papers (optional `BGPT_API_KEY`). **brave** `llm-context` is page chunks (`BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`); `search` is titles/URLs. **exa** semantic search (`EXA_API_KEY`). **firecrawl** web search + paper index (`FIRECRAWL_API_KEY`). **reddit** posts + comments (`REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET`). **sploitus** exploit/hacktool index (no key).
 
 ## Commands
 
@@ -95,6 +102,15 @@ research-cli reddit search "async rust" --subreddit rust
 research-cli reddit thread abc123 --sort top --limit 50
 research-cli reddit thread https://www.reddit.com/r/python/comments/abc123/title/
 research-cli reddit subreddit rust --sort top --time week --limit 25
+research-cli sploitus search "CVE-2021-44228" --sort score --limit 10
+research-cli sploitus search "wordpress rce" --source
+research-cli sploitus search "c2" --type tools --sort date
+research-cli sploitus exploit EDB-ID:50592
+research-cli sploitus exploit https://sploitus.com/exploit?id=EDB-ID:50592
+research-cli sploitus cve CVE-2021-44228 --limit 20
+research-cli sploitus product wordpress --limit 50
+research-cli sploitus latest --limit 25
+research-cli sploitus autocomplete log4
 ```
 
 `--base-url` overrides the API origin (local fixture servers). Output is JSON on stdout. `--version` prints SemVer.
@@ -108,5 +124,6 @@ research-cli reddit subreddit rust --sort top --time week --limit 25
 | exa | `EXA_API_KEY` | yes |
 | firecrawl | `FIRECRAWL_API_KEY` | yes |
 | reddit | `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` | yes |
+| sploitus | none | no |
 
-Missing Brave, Exa, Firecrawl, or Reddit keys exit non-zero and name the provider. BGPT HTTP error bodies are printed on failure.
+Missing Brave, Exa, Firecrawl, or Reddit keys exit non-zero and name the provider. BGPT and Sploitus HTTP error bodies are printed on failure.

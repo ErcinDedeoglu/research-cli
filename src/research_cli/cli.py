@@ -19,15 +19,15 @@ from research_cli.keys import (
     require_firecrawl_key,
     require_reddit_credentials,
 )
-from research_cli.providers import bgpt, brave, exa, firecrawl, reddit
+from research_cli.providers import bgpt, brave, exa, firecrawl, reddit, sploitus
 from research_cli.providers import firecrawl_papers as papers
 from research_cli.update import run_self_update, spawn_background_update
 
 DESCRIPTION = (
     "Agent-facing research CLI. Direct HTTP REST calls for bgpt paper search, "
     "brave search / llm-context, exa search/contents, firecrawl "
-    "scrape/search/map/papers, and reddit search/thread/subreddit. "
-    "Do not use MCP; run this CLI."
+    "scrape/search/map/papers, reddit search/thread/subreddit, and sploitus "
+    "exploit/hacktool search, CVE, product, and latest. Do not use MCP; run this CLI."
 )
 
 EPILOG = """\
@@ -37,6 +37,7 @@ providers:
   exa           Exa semantic search and page contents/fetch
   firecrawl     Firecrawl scrape, search, map, and research papers
   reddit        Reddit post search, thread comments, and subreddit listings (OAuth)
+  sploitus      Sploitus exploit/hacktool search, CVE, product, latest (no API key)
 
 examples:
   research-cli bgpt search "CRISPR delivery neurons"
@@ -54,6 +55,13 @@ examples:
   research-cli reddit search "CRISPR neurons" --sort top --time week
   research-cli reddit thread abc123 --sort top --limit 50
   research-cli reddit subreddit rust --sort top --time week
+  research-cli sploitus search "CVE-2021-44228" --sort score
+  research-cli sploitus search "c2" --type tools
+  research-cli sploitus exploit EDB-ID:50592
+  research-cli sploitus cve CVE-2021-44228
+  research-cli sploitus product wordpress
+  research-cli sploitus latest
+  research-cli sploitus autocomplete log4
 """
 
 
@@ -280,6 +288,84 @@ def build_parser() -> argparse.ArgumentParser:
         help="Time window for top/controversial (Reddit t=)",
     )
     reddit_listing.add_argument("--limit", type=int, default=25)
+
+    sploitus_p = sub.add_parser(
+        "sploitus", help="Sploitus exploit and hacktool search"
+    )
+    sploitus_sub = sploitus_p.add_subparsers(dest="operation", required=True)
+    sploitus_search = sploitus_sub.add_parser(
+        "search", help="Search exploits or hacktools via Sploitus", parents=[shared]
+    )
+    sploitus_search.add_argument("query", help="CVE, product, or exploit terms")
+    sploitus_search.add_argument(
+        "--type",
+        dest="search_type",
+        default="exploits",
+        choices=("exploits", "tools"),
+        help="exploits (PoC/MSF) or tools (hacktools)",
+    )
+    sploitus_search.add_argument(
+        "--sort",
+        default="default",
+        choices=("default", "date", "score"),
+        help="Sploitus ranking: default, date, or score (CVSS)",
+    )
+    sploitus_search.add_argument("--offset", type=int, default=0)
+    sploitus_search.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Max hits (server pages 10 at a time)",
+    )
+    sploitus_search.add_argument(
+        "--source",
+        action="store_true",
+        help="Include full exploit source in each hit (large)",
+    )
+    sploitus_exploit = sploitus_sub.add_parser(
+        "exploit",
+        help="Read one exploit page (source + metadata)",
+        parents=[shared],
+    )
+    sploitus_exploit.add_argument(
+        "target", help="Exploit id or https://sploitus.com/exploit?id=..."
+    )
+    sploitus_cve = sploitus_sub.add_parser(
+        "cve",
+        help="List known exploits for a CVE",
+        parents=[shared],
+    )
+    sploitus_cve.add_argument("cve_id", help="CVE-YYYY-NNNNN")
+    sploitus_cve.add_argument("--limit", type=int, default=100)
+    sploitus_product = sploitus_sub.add_parser(
+        "product",
+        help="List exploited CVEs for a product",
+        parents=[shared],
+    )
+    sploitus_product.add_argument("name", help="Product name or /product/slug")
+    sploitus_product.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Max CVE rows (site pages 50 at a time)",
+    )
+    sploitus_latest = sploitus_sub.add_parser(
+        "latest",
+        help="Newest exploits in the index",
+        parents=[shared],
+    )
+    sploitus_latest.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Max hits (site pages 50 at a time)",
+    )
+    sploitus_ac = sploitus_sub.add_parser(
+        "autocomplete",
+        help="Typeahead suggestions",
+        parents=[shared],
+    )
+    sploitus_ac.add_argument("query", help="Partial query")
     return parser
 
 
@@ -439,6 +525,65 @@ def _dispatch_reddit(
     raise ValueError(f"unknown command: reddit {args.operation}")
 
 
+def _dispatch_sploitus(
+    args: argparse.Namespace,
+    environ: Mapping[str, str],
+    transport: Transport | None,
+    timeout: float,
+) -> dict[str, Any]:
+    origin = _origin(args, environ, sploitus.DEFAULT_ORIGIN)
+    if args.operation == "search":
+        return sploitus.search(
+            args.query,
+            search_type=args.search_type,
+            sort=args.sort,
+            offset=args.offset,
+            limit=args.limit,
+            include_source=args.source,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if args.operation == "exploit":
+        return sploitus.exploit(
+            args.target,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if args.operation == "cve":
+        return sploitus.cve(
+            args.cve_id,
+            limit=args.limit,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if args.operation == "product":
+        return sploitus.product(
+            args.name,
+            limit=args.limit,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if args.operation == "latest":
+        return sploitus.latest(
+            limit=args.limit,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if args.operation == "autocomplete":
+        return sploitus.autocomplete(
+            args.query,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    raise ValueError(f"unknown command: sploitus {args.operation}")
+
+
 def _dispatch(
     args: argparse.Namespace,
     environ: Mapping[str, str],
@@ -507,6 +652,8 @@ def _dispatch(
         return _dispatch_firecrawl(args, environ, transport, timeout)
     if args.provider == "reddit":
         return _dispatch_reddit(args, environ, transport, timeout)
+    if args.provider == "sploitus":
+        return _dispatch_sploitus(args, environ, transport, timeout)
     raise ValueError(f"unknown command: {args.provider} {getattr(args, 'operation', '')}")
 
 

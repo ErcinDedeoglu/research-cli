@@ -30,6 +30,7 @@ from fixtures import (  # noqa: E402
     PAPERS_RELATED_TITLE,
     REDDIT_COMMENT_BODY,
     REDDIT_TITLE,
+    SPLOITUS_TITLE,
     start_fixture_server,
 )
 
@@ -85,6 +86,7 @@ class HelpTests(unittest.TestCase):
         self.assertIn("exa", text)
         self.assertIn("firecrawl", text)
         self.assertIn("reddit", text)
+        self.assertIn("sploitus", text)
         self.assertIn("--self-update", text)
 
     def test_version_prints_package_version(self) -> None:
@@ -170,6 +172,7 @@ class FixtureServerCliTests(unittest.TestCase):
             (["exa", "search", "llm"], EXA_SEARCH_URL),
             (["firecrawl", "search", "scraping"], FIRECRAWL_SEARCH_URL),
             (["reddit", "search", "python"], REDDIT_TITLE),
+            (["sploitus", "search", "log4j"], SPLOITUS_TITLE),
         ]
         for _ in range(2):
             for args, needle in commands:
@@ -215,6 +218,12 @@ class FixtureServerCliTests(unittest.TestCase):
             ),
             (["reddit", "thread", "abc123", "--sort", "top"], REDDIT_COMMENT_BODY),
             (["reddit", "subreddit", "python", "--sort", "top", "--time", "week"], REDDIT_TITLE),
+            (["sploitus", "search", "log4j", "--sort", "score", "--type", "exploits"], SPLOITUS_TITLE),
+            (["sploitus", "exploit", "EDB-ID:50592"], SPLOITUS_TITLE),
+            (["sploitus", "cve", "CVE-2021-44228"], "Fixture CVE description"),
+            (["sploitus", "product", "wordpress"], "CVE-2026-60137"),
+            (["sploitus", "latest"], "Fixture latest exploit"),
+            (["sploitus", "autocomplete", "log4"], "log4j"),
         ]
         for args, needle in cases:
             proc = self._cli(*args)

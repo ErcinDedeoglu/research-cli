@@ -1,6 +1,6 @@
 # research-cli
 
-Agent-facing CLI that searches papers and the web by calling **BGPT**, **Brave Search**, **Exa**, **Firecrawl**, and **Reddit** HTTP APIs directly (not MCP).
+Agent-facing CLI that searches papers and the web by calling **BGPT**, **Brave Search**, **Exa**, **Firecrawl**, **Reddit**, and **Sploitus** HTTP APIs directly (not MCP).
 
 Agents should follow [`skills/research-cli/SKILL.md`](skills/research-cli/SKILL.md).
 
@@ -57,8 +57,12 @@ Every push to `main` bumps **SemVer** (`vMAJOR.MINOR.PATCH`) from conventional c
 | `research-cli firecrawl papers inspect ID` | `GET .../papers/{id}` | `FIRECRAWL_API_KEY` |
 | `research-cli firecrawl papers read ID --question Q` | `GET .../papers/{id}?query=` | `FIRECRAWL_API_KEY` |
 | `research-cli firecrawl papers related ID --intent T` | `GET .../papers/{id}/similar` | `FIRECRAWL_API_KEY` |
-
-`--base-url` replaces the API origin (for fixture servers). JSON is written to stdout. API keys: environment variables, or `$HOME/.config/research-cli/env` (see `.env.example`).
+| `research-cli sploitus search QUERY` | `POST https://sploitus.com/search` | none |
+| `research-cli sploitus exploit ID` | `GET https://sploitus.com/exploit?id=` | none |
+| `research-cli sploitus cve CVE` | `GET https://sploitus.com/cve/{id}` | none |
+| `research-cli sploitus product NAME` | `GET https://sploitus.com/product/{slug}` | none |
+| `research-cli sploitus latest` | `GET https://sploitus.com/latest` | none |
+| `research-cli sploitus autocomplete Q` | `GET https://sploitus.com/autocomplete` | none |
 
 ## Tests
 

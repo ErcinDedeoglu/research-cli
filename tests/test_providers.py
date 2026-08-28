@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from research_cli.errors import ProviderHttpError  # noqa: E402
 from research_cli.http import HttpResponse  # noqa: E402
-from research_cli.providers import bgpt, brave, exa, firecrawl, reddit  # noqa: E402
+from research_cli.providers import bgpt, brave, exa, firecrawl, reddit, sploitus  # noqa: E402
 
 from research_cli.providers import firecrawl_papers as papers  # noqa: E402
 
@@ -63,6 +63,21 @@ from fixtures import (  # noqa: E402
     REDDIT_TOKEN,
     REDDIT_TOKEN_PAYLOAD,
     REDDIT_URL,
+    SPLOITUS_AUTOCOMPLETE,
+    SPLOITUS_CVE,
+    SPLOITUS_CVE_HTML,
+    SPLOITUS_EXPLOIT_HTML,
+    SPLOITUS_HREF,
+    SPLOITUS_ID,
+    SPLOITUS_LATEST_HTML,
+    SPLOITUS_PRODUCT_HTML,
+    SPLOITUS_PRODUCT_PAGE2_HTML,
+    SPLOITUS_SEARCH_PAYLOAD,
+    SPLOITUS_SOURCE,
+    SPLOITUS_TITLE,
+    SPLOITUS_TOOL_ID,
+    SPLOITUS_TOOL_PAYLOAD,
+    SPLOITUS_TOOL_TITLE,
 )
 
 
@@ -78,6 +93,23 @@ class CapturingTransport:
         return HttpResponse(
             status=self.status,
             headers={"Content-Type": "application/json"},
+            body=body,
+        )
+
+
+class HtmlTransport:
+    def __init__(self, *pages: str) -> None:
+        self.pages = list(pages)
+        self.requests: list = []
+        self.request = None
+
+    def __call__(self, request):
+        self.requests.append(request)
+        self.request = request
+        body = (self.pages.pop(0) if self.pages else "").encode("utf-8")
+        return HttpResponse(
+            status=200,
+            headers={"Content-Type": "text/html; charset=UTF-8"},
             body=body,
         )
 
@@ -475,6 +507,150 @@ class ProviderClientTests(unittest.TestCase):
         self.assertEqual(out["operation"], "subreddit")
         self.assertEqual(out["subreddit"], "python")
         self.assertEqual(out["results"][0]["title"], REDDIT_TITLE)
+
+    def test_sploitus_search_post_frontend_header_and_body(self) -> None:
+        transport = CapturingTransport(SPLOITUS_SEARCH_PAYLOAD)
+        out = sploitus.search("log4j rce", transport=transport)
+        req = transport.request
+        parsed = urlparse(req.url)
+        self.assertEqual(req.method, "POST")
+        self.assertEqual(parsed.hostname, "sploitus.com")
+        self.assertEqual(parsed.path, "/search")
+        self.assertEqual(req.headers.get("X-Requested-With"), "sploitus-frontend")
+        self.assertEqual(req.headers.get("Content-Type"), "application/json")
+        self.assertEqual(req.headers.get("Accept"), "application/json")
+        self.assertEqual(req.headers.get("Referer"), "https://sploitus.com/")
+        body = json.loads(req.body.decode("utf-8"))
+        self.assertEqual(
+            body,
+            {
+                "type": "exploits",
+                "sort": "default",
+                "query": "log4j rce",
+                "offset": 0,
+            },
+        )
+        self.assertEqual(set(body), {"type", "sort", "query", "offset"})
+        self.assertEqual(out["provider"], "sploitus")
+        self.assertEqual(out["operation"], "search")
+        self.assertEqual(out["type"], "exploits")
+        self.assertEqual(out["total"], 42)
+        hit = out["results"][0]
+        self.assertEqual(hit["id"], SPLOITUS_ID)
+        self.assertEqual(hit["title"], SPLOITUS_TITLE)
+        self.assertEqual(hit["href"], SPLOITUS_HREF)
+        self.assertEqual(hit["url"], f"https://sploitus.com/exploit?id={SPLOITUS_ID}")
+        self.assertEqual(hit["cve"], [SPLOITUS_CVE])
+        self.assertEqual(hit["epss"], 0.99)
+        self.assertNotIn("source", hit)
+
+    def test_sploitus_search_source_flag_and_tools_type(self) -> None:
+        sourced = sploitus.search(
+            "log4j",
+            include_source=True,
+            transport=CapturingTransport(SPLOITUS_SEARCH_PAYLOAD),
+        )
+        self.assertEqual(sourced["results"][0]["source"], SPLOITUS_SOURCE)
+        transport = CapturingTransport(SPLOITUS_TOOL_PAYLOAD)
+        out = sploitus.search(
+            "c2", search_type="tools", sort="date", offset=10, transport=transport
+        )
+        body = json.loads(transport.request.body.decode("utf-8"))
+        self.assertEqual(body["type"], "tools")
+        self.assertEqual(body["sort"], "date")
+        self.assertEqual(body["offset"], 10)
+        hit = out["results"][0]
+        self.assertEqual(hit["id"], SPLOITUS_TOOL_ID)
+        self.assertEqual(hit["title"], SPLOITUS_TOOL_TITLE)
+        self.assertEqual(hit["download"], "https://kitploit.example/c2.zip")
+        self.assertEqual(out["type"], "tools")
+
+    def test_sploitus_search_paginates_offset_by_page_length(self) -> None:
+        page1 = {
+            "exploits": [
+                {"id": f"E-{i}", "title": f"Hit {i}", "href": f"https://ex/{i}"}
+                for i in range(10)
+            ],
+            "exploits_total": 15,
+        }
+        page2 = {
+            "exploits": [
+                {"id": f"E-{i}", "title": f"Hit {i}", "href": f"https://ex/{i}"}
+                for i in range(10, 15)
+            ],
+            "exploits_total": 15,
+        }
+        transport = SequentialTransport(page1, page2)
+        out = sploitus.search("q", limit=12, transport=transport)
+        self.assertEqual(len(transport.requests), 2)
+        first = json.loads(transport.requests[0].body.decode("utf-8"))
+        second = json.loads(transport.requests[1].body.decode("utf-8"))
+        self.assertEqual(first["offset"], 0)
+        self.assertEqual(second["offset"], 10)
+        self.assertEqual(len(out["results"]), 12)
+        self.assertEqual(out["results"][-1]["id"], "E-11")
+        self.assertEqual(out["total"], 15)
+
+    def test_sploitus_autocomplete_get_query(self) -> None:
+        transport = CapturingTransport(SPLOITUS_AUTOCOMPLETE)
+        out = sploitus.autocomplete("log4", transport=transport)
+        parsed = urlparse(transport.request.url)
+        self.assertEqual(transport.request.method, "GET")
+        self.assertEqual(parsed.path, "/autocomplete")
+        self.assertEqual(parse_qs(parsed.query)["query"], ["log4"])
+        self.assertEqual(
+            transport.request.headers.get("X-Requested-With"), "sploitus-frontend"
+        )
+        self.assertEqual([item["text"] for item in out["results"]], SPLOITUS_AUTOCOMPLETE)
+
+    def test_sploitus_exploit_get_html_source_and_cve(self) -> None:
+        transport = HtmlTransport(SPLOITUS_EXPLOIT_HTML)
+        out = sploitus.exploit(
+            "https://sploitus.com/exploit?id=EDB-ID:50592", transport=transport
+        )
+        parsed = urlparse(transport.request.url)
+        self.assertEqual(transport.request.method, "GET")
+        self.assertEqual(parsed.path, "/exploit")
+        self.assertEqual(parse_qs(parsed.query)["id"], [SPLOITUS_ID])
+        hit = out["results"][0]
+        self.assertEqual(out["operation"], "exploit")
+        self.assertEqual(hit["id"], SPLOITUS_ID)
+        self.assertEqual(hit["title"], SPLOITUS_TITLE)
+        self.assertEqual(hit["cve"], [SPLOITUS_CVE])
+        self.assertIn("print('fixture poc')", hit["source"])
+        self.assertEqual(hit["href"], SPLOITUS_HREF)
+
+    def test_sploitus_cve_and_latest_parse_cards(self) -> None:
+        cve_out = sploitus.cve(
+            "cve-2021-44228", transport=HtmlTransport(SPLOITUS_CVE_HTML)
+        )
+        self.assertEqual(cve_out["cve"], SPLOITUS_CVE)
+        self.assertEqual(cve_out["nvd"], "https://nvd.nist.gov/vuln/detail/CVE-2021-44228")
+        self.assertEqual(cve_out["results"][0]["id"], SPLOITUS_ID)
+        self.assertEqual(cve_out["metrics"]["CVSS 3.1"], "10.0 CRITICAL")
+        latest_t = HtmlTransport(SPLOITUS_LATEST_HTML)
+        latest_out = sploitus.latest(transport=latest_t)
+        self.assertEqual(urlparse(latest_t.request.url).path, "/latest")
+        hit = latest_out["results"][0]
+        self.assertEqual(hit["id"], "9A4610FF-1CD2-5A57-B026-325B42ADF181")
+        self.assertEqual(hit["title"], "Fixture latest exploit")
+        self.assertEqual(hit["score"], 9.8)
+        self.assertEqual(hit["tag"], "GITHUB")
+
+    def test_sploitus_product_follows_rel_next(self) -> None:
+        transport = HtmlTransport(SPLOITUS_PRODUCT_HTML, SPLOITUS_PRODUCT_PAGE2_HTML)
+        out = sploitus.product("WordPress", limit=2, transport=transport)
+        self.assertEqual(len(transport.requests), 2)
+        self.assertEqual(
+            urlparse(transport.requests[0].url).path, "/product/wordpress"
+        )
+        self.assertEqual(
+            urlparse(transport.requests[1].url).path, "/product/wordpress/page/2"
+        )
+        self.assertEqual(out["product"], "wordpress")
+        self.assertEqual(out["results"][0]["id"], "CVE-2026-60137")
+        self.assertEqual(out["results"][1]["id"], "CVE-2025-6389")
+        self.assertEqual(out["total"], 2)
 
 
 if __name__ == "__main__":
