@@ -1,3 +1,3 @@
 """Agent-facing research CLI for BGPT, Brave Search, Exa, Firecrawl, Reddit, and Sploitus."""
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
