@@ -1,6 +1,6 @@
 # research-cli
 
-Agent-facing CLI that searches papers and the web by calling **BGPT**, **Brave Search**, **Exa**, **Firecrawl**, **Reddit**, and **Sploitus** HTTP APIs directly (not MCP).
+Agent-facing CLI that searches papers and the web by calling **BGPT**, **Brave Search**, **Exa**, **Firecrawl**, **Reddit**, **Sploitus**, **Exploit-DB**, and **Malpedia** HTTP APIs directly (not MCP).
 
 Agents should follow [`skills/research-cli/SKILL.md`](skills/research-cli/SKILL.md).
 
@@ -63,6 +63,11 @@ Every push to `main` bumps **SemVer** (`vMAJOR.MINOR.PATCH`) from conventional c
 | `research-cli sploitus product NAME` | `GET https://sploitus.com/product/{slug}` | none |
 | `research-cli sploitus latest` | `GET https://sploitus.com/latest` | none |
 | `research-cli sploitus autocomplete Q` | `GET https://sploitus.com/autocomplete` | none |
+| `research-cli exploitdb search QUERY` | `GET https://www.exploit-db.com/search` (XHR JSON) | none |
+| `research-cli malpedia search QUERY` | `GET https://malpedia.caad.fkie.fraunhofer.de/api/find/{family,actor}` | none |
+| `research-cli malpedia family ID` | `GET .../api/get/family/{id}` | none |
+| `research-cli malpedia yara ID` | `GET .../api/get/yara/{id}` | none |
+| `research-cli malpedia bib --family ID` | `GET .../api/get/bib/family/{id}` | none |
 
 ## Tests
 

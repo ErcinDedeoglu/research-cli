@@ -35,6 +35,11 @@ from fixtures import (  # noqa: E402
     EDB_SHELLCODE_TITLE,
     EDB_SOURCE,
     EDB_TITLE,
+    MALPEDIA_FAMILY_ID,
+    MALPEDIA_REF_URL,
+    MALPEDIA_YARA_NAME,
+    MALPEDIA_YARA_RAW,
+    MALPEDIA_ZIP,
     start_fixture_server,
 )
 
@@ -92,6 +97,7 @@ class HelpTests(unittest.TestCase):
         self.assertIn("reddit", text)
         self.assertIn("sploitus", text)
         self.assertIn("exploitdb", text)
+        self.assertIn("malpedia", text)
         self.assertIn("--self-update", text)
 
     def test_version_prints_package_version(self) -> None:
@@ -179,6 +185,7 @@ class FixtureServerCliTests(unittest.TestCase):
             (["reddit", "search", "python"], REDDIT_TITLE),
             (["sploitus", "search", "log4j"], SPLOITUS_TITLE),
             (["exploitdb", "search", "log4j"], EDB_TITLE),
+            (["malpedia", "search", "emotet"], MALPEDIA_FAMILY_ID),
         ]
         for _ in range(2):
             for args, needle in commands:
@@ -243,6 +250,20 @@ class FixtureServerCliTests(unittest.TestCase):
             (["exploitdb", "dork", "2"], "Ganglia Cluster Reports"),
             (["exploitdb", "authors", "leon"], "leonjza"),
             (["exploitdb", "stats"], "46664"),
+            (["malpedia", "search", "emotet"], MALPEDIA_FAMILY_ID),
+            (["malpedia", "family", "win.emotet"], "Emotet"),
+            (["malpedia", "actor", "apt28"], "APT28"),
+            (["malpedia", "yara", "win.emotet"], MALPEDIA_YARA_NAME),
+            (["malpedia", "families", "--limit", "2"], MALPEDIA_FAMILY_ID),
+            (["malpedia", "families", "--full"], "Emotet"),
+            (["malpedia", "actors", "--limit", "2"], "apt28"),
+            (["malpedia", "actors", "--full"], "APT28"),
+            (["malpedia", "bib", "--family", "win.emotet"], "kupreev:20250410:goffee:adb0ca3"),
+            (["malpedia", "misp"], "Malpedia"),
+            (["malpedia", "references", "--url", MALPEDIA_REF_URL], "GOFFEE"),
+            (["malpedia", "yara-list", "--family", "win.emotet"], MALPEDIA_YARA_NAME),
+            (["malpedia", "yara-after", "2026-01-01"], MALPEDIA_YARA_NAME),
+            (["malpedia", "version"], "26109"),
         ]
         for args, needle in cases:
             proc = self._cli(*args)
@@ -258,6 +279,23 @@ class FixtureServerCliTests(unittest.TestCase):
             self.assertEqual(payload["filename"], "50592.py")
             self.assertTrue(path.is_file())
             self.assertEqual(path.read_text(encoding="utf-8"), EDB_SOURCE)
+
+    def test_malpedia_yara_dump_and_zip_write_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dump = self._cli(
+                "malpedia", "yara-dump", "--tlp", "white", "--output", tmp
+            )
+            self.assertEqual(dump.returncode, 0, dump.stderr)
+            payload = json.loads(dump.stdout)
+            path = Path(payload["path"])
+            self.assertEqual(payload["filename"], "malpedia_tlp_white.yar")
+            self.assertEqual(path.read_text(encoding="utf-8"), MALPEDIA_YARA_RAW)
+            zipped = self._cli(
+                "malpedia", "yara", "win.emotet", "--zip", "--output", tmp
+            )
+            self.assertEqual(zipped.returncode, 0, zipped.stderr)
+            zip_payload = json.loads(zipped.stdout)
+            self.assertEqual(Path(zip_payload["path"]).read_bytes(), MALPEDIA_ZIP)
 
 
 if __name__ == "__main__":

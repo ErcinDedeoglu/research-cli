@@ -1,1 +1,1 @@
-"""HTTP provider clients for BGPT, Brave Search, Exa, Firecrawl, Reddit, Sploitus, and Exploit-DB."""
+"""HTTP provider clients for BGPT, Brave, Exa, Firecrawl, Reddit, Sploitus, Exploit-DB, and Malpedia."""

@@ -19,7 +19,7 @@ from research_cli.keys import (
     require_firecrawl_key,
     require_reddit_credentials,
 )
-from research_cli.providers import bgpt, brave, exa, exploitdb, firecrawl, reddit, sploitus
+from research_cli.providers import bgpt, brave, exa, exploitdb, firecrawl, malpedia, reddit, sploitus
 from research_cli.providers import firecrawl_papers as papers
 from research_cli.update import run_self_update, spawn_background_update
 
@@ -27,7 +27,8 @@ DESCRIPTION = (
     "Agent-facing research CLI. Direct HTTP REST calls for bgpt paper search, "
     "brave search / llm-context, exa search/contents, firecrawl "
     "scrape/search/map/papers, reddit search/thread/subreddit, sploitus "
-    "exploit/hacktool search, and exploit-db exploits/GHDB/papers/shellcodes. "
+    "exploit/hacktool search, exploit-db exploits/GHDB/papers/shellcodes, "
+    "and malpedia malware families/actors/YARA/bib/MISP (guest). "
     "Do not use MCP; run this CLI."
 )
 
@@ -40,6 +41,7 @@ providers:
   reddit        Reddit post search, thread comments, and subreddit listings (OAuth)
   sploitus      Sploitus exploit/hacktool search, CVE, product, latest (no API key)
   exploitdb     Exploit-DB search, latest, GHDB, papers, shellcodes (no API key)
+  malpedia      Malpedia families, actors, YARA, bib, MISP, references (guest)
 
 examples:
   research-cli bgpt search "CRISPR delivery neurons"
@@ -78,6 +80,21 @@ examples:
   research-cli exploitdb dork 2
   research-cli exploitdb authors leon
   research-cli exploitdb stats
+  research-cli malpedia search emotet
+  research-cli malpedia family win.emotet
+  research-cli malpedia actor apt28
+  research-cli malpedia yara win.emotet
+  research-cli malpedia yara win.emotet --zip --output /tmp
+  research-cli malpedia families --limit 20
+  research-cli malpedia families --full --limit 5
+  research-cli malpedia actors --limit 20
+  research-cli malpedia bib --family win.owowa
+  research-cli malpedia misp --output /tmp
+  research-cli malpedia references --url https://securelist.com/goffee-apt-new-attacks/116139/
+  research-cli malpedia yara-list --family win.emotet
+  research-cli malpedia yara-dump --tlp white --output /tmp --timeout 180
+  research-cli malpedia yara-after 2026-01-01
+  research-cli malpedia version
 """
 
 
@@ -487,6 +504,147 @@ def build_parser() -> argparse.ArgumentParser:
         help="Database counts (exploits/papers/shellcodes/GHDB)",
         parents=[shared],
     )
+
+    mal_p = sub.add_parser(
+        "malpedia", help="Malpedia malware families, actors, YARA, bib, MISP"
+    )
+    mal_sub = mal_p.add_subparsers(dest="operation", required=True)
+    mal_search = mal_sub.add_parser(
+        "search", help="Find families and actors by name fragment", parents=[shared]
+    )
+    mal_search.add_argument("query", help="Name fragment (emotet, apt28, …)")
+    mal_family = mal_sub.add_parser(
+        "family", help="Family metadata /api/get/family/{id}", parents=[shared]
+    )
+    mal_family.add_argument("target", help="Family id (win.emotet)")
+    mal_actor = mal_sub.add_parser(
+        "actor", help="Actor metadata /api/get/actor/{id}", parents=[shared]
+    )
+    mal_actor.add_argument("target", help="Actor id (apt28)")
+    mal_yara = mal_sub.add_parser(
+        "yara", help="YARA rules for a family (guest TLP white)", parents=[shared]
+    )
+    mal_yara.add_argument("target", help="Family id")
+    mal_yara.add_argument(
+        "--zip",
+        dest="as_zip",
+        action="store_true",
+        help="Download /api/get/yara/{id}/zip instead of JSON",
+    )
+    mal_yara.add_argument(
+        "--output",
+        "-o",
+        help="File or directory for --zip (default: cwd, name from Content-Disposition)",
+    )
+    mal_families = mal_sub.add_parser(
+        "families",
+        help="List family ids, or --full /api/get/families",
+        parents=[shared],
+    )
+    mal_families.add_argument("--limit", type=int, default=None)
+    mal_families.add_argument(
+        "--full",
+        action="store_true",
+        help="GET /api/get/families (~4MB JSON of every family)",
+    )
+    mal_families.add_argument(
+        "--output",
+        "-o",
+        help="Write the raw JSON body to a file or directory",
+    )
+    mal_actors = mal_sub.add_parser(
+        "actors",
+        help="List actor ids, or --full /api/get/actors",
+        parents=[shared],
+    )
+    mal_actors.add_argument("--limit", type=int, default=None)
+    mal_actors.add_argument(
+        "--full",
+        action="store_true",
+        help="GET /api/get/actors (~1MB JSON of every actor)",
+    )
+    mal_actors.add_argument(
+        "--output",
+        "-o",
+        help="Write the raw JSON body to a file or directory",
+    )
+    mal_bib = mal_sub.add_parser(
+        "bib", help="BibTeX library (all, or one family/actor)", parents=[shared]
+    )
+    mal_bib_id = mal_bib.add_mutually_exclusive_group()
+    mal_bib_id.add_argument("--family", help="Family id (win.owowa)")
+    mal_bib_id.add_argument("--actor", help="Actor id (goffee)")
+    mal_bib.add_argument(
+        "--output",
+        "-o",
+        help="Write the .bib body to a file or directory",
+    )
+    mal_misp = mal_sub.add_parser(
+        "misp", help="MISP galaxy cluster dump (~4MB)", parents=[shared]
+    )
+    mal_misp.add_argument(
+        "--output",
+        "-o",
+        help="Write the raw JSON body to a file or directory",
+    )
+    mal_refs = mal_sub.add_parser(
+        "references",
+        help="URL → family/actor map (~4.7MB; filter with --url)",
+        parents=[shared],
+    )
+    mal_refs.add_argument(
+        "--url",
+        help="Return only the mapping for this reference URL",
+    )
+    mal_refs.add_argument(
+        "--output",
+        "-o",
+        help="Write the raw JSON body to a file or directory",
+    )
+    mal_yara_list = mal_sub.add_parser(
+        "yara-list", help="Index of guest YARA paths per family", parents=[shared]
+    )
+    mal_yara_list.add_argument("--family", help="Limit to one family id")
+    mal_dump = mal_sub.add_parser(
+        "yara-dump",
+        help="Bulk YARA (writes a .yar/.zip; guest TLP white == green)",
+        parents=[shared],
+    )
+    mal_dump_kind = mal_dump.add_mutually_exclusive_group(required=True)
+    mal_dump_kind.add_argument(
+        "--tlp",
+        choices=malpedia.TLPS,
+        help="GET /api/get/yara/tlp_{white|green|amber}/raw or /zip",
+    )
+    mal_dump_kind.add_argument(
+        "--auto",
+        dest="auto_rules",
+        action="store_true",
+        help="GET /api/get/yara/auto/raw (YARA-Signator rules)",
+    )
+    mal_dump.add_argument(
+        "--zip",
+        dest="as_zip",
+        action="store_true",
+        help="Download the zip bundle instead of concatenated .yar",
+    )
+    mal_dump.add_argument(
+        "--output",
+        "-o",
+        help="File or directory (default: cwd, name from Content-Disposition)",
+    )
+    mal_after = mal_sub.add_parser(
+        "yara-after",
+        help="YARA rules newer than YYYY-MM-DD (JSON)",
+        parents=[shared],
+    )
+    mal_after.add_argument("date", help="YYYY-MM-DD")
+    mal_after.add_argument(
+        "--output",
+        "-o",
+        help="Write the raw JSON body to a file or directory",
+    )
+    mal_sub.add_parser("version", help="Malpedia catalog version", parents=[shared])
     return parser
 
 
@@ -817,6 +975,101 @@ def _dispatch_exploitdb(
     raise ValueError(f"unknown command: exploitdb {args.operation}")
 
 
+def _dispatch_malpedia(
+    args: argparse.Namespace,
+    environ: Mapping[str, str],
+    transport: Transport | None,
+    timeout: float,
+) -> dict[str, Any]:
+    origin = _origin(args, environ, malpedia.DEFAULT_ORIGIN)
+    op = args.operation
+    if op == "search":
+        return malpedia.search(
+            args.query, origin=origin, transport=transport, timeout=timeout
+        )
+    if op == "family":
+        return malpedia.family(
+            args.target, origin=origin, transport=transport, timeout=timeout
+        )
+    if op == "actor":
+        return malpedia.actor(
+            args.target, origin=origin, transport=transport, timeout=timeout
+        )
+    if op == "yara":
+        return malpedia.yara(
+            args.target,
+            as_zip=args.as_zip,
+            output=args.output,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "families":
+        return malpedia.families(
+            limit=args.limit,
+            full=args.full,
+            output=args.output,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "actors":
+        return malpedia.actors(
+            limit=args.limit,
+            full=args.full,
+            output=args.output,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "bib":
+        return malpedia.bib(
+            family=args.family,
+            actor=args.actor,
+            output=args.output,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "misp":
+        return malpedia.misp(
+            output=args.output, origin=origin, transport=transport, timeout=timeout
+        )
+    if op == "references":
+        return malpedia.references(
+            url=args.url,
+            output=args.output,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "yara-list":
+        return malpedia.yara_list(
+            family=args.family, origin=origin, transport=transport, timeout=timeout
+        )
+    if op == "yara-dump":
+        return malpedia.yara_dump(
+            tlp=args.tlp,
+            auto=args.auto_rules,
+            as_zip=args.as_zip,
+            output=args.output,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "yara-after":
+        return malpedia.yara_after(
+            args.date,
+            output=args.output,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if op == "version":
+        return malpedia.version(origin=origin, transport=transport, timeout=timeout)
+    raise ValueError(f"unknown command: malpedia {args.operation}")
+
+
 def _dispatch(
     args: argparse.Namespace,
     environ: Mapping[str, str],
@@ -889,6 +1142,8 @@ def _dispatch(
         return _dispatch_sploitus(args, environ, transport, timeout)
     if args.provider == "exploitdb":
         return _dispatch_exploitdb(args, environ, transport, timeout)
+    if args.provider == "malpedia":
+        return _dispatch_malpedia(args, environ, transport, timeout)
     raise ValueError(f"unknown command: {args.provider} {getattr(args, 'operation', '')}")
 
 

@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from research_cli.errors import ProviderHttpError  # noqa: E402
 from research_cli.http import HttpResponse  # noqa: E402
-from research_cli.providers import bgpt, brave, exa, exploitdb, firecrawl, reddit, sploitus  # noqa: E402
+from research_cli.providers import bgpt, brave, exa, exploitdb, firecrawl, malpedia, reddit, sploitus  # noqa: E402
 
 from research_cli.providers import firecrawl_papers as papers  # noqa: E402
 
@@ -101,6 +101,30 @@ from fixtures import (  # noqa: E402
     EDB_SHELLCODES_PAYLOAD,
     EDB_SOURCE,
     EDB_TITLE,
+    MALPEDIA_ACTOR_ID,
+    MALPEDIA_ACTOR_PAYLOAD,
+    MALPEDIA_ACTORS,
+    MALPEDIA_ACTORS_FULL,
+    MALPEDIA_BIB,
+    MALPEDIA_FAMILIES,
+    MALPEDIA_FAMILIES_FULL,
+    MALPEDIA_FAMILY_ID,
+    MALPEDIA_FAMILY_PAYLOAD,
+    MALPEDIA_FIND_ACTOR,
+    MALPEDIA_FIND_FAMILY,
+    MALPEDIA_HASH,
+    MALPEDIA_MISP,
+    MALPEDIA_REF_URL,
+    MALPEDIA_REFERENCES,
+    MALPEDIA_SAMPLE_INFO,
+    MALPEDIA_SAMPLES_PAYLOAD,
+    MALPEDIA_VERSION_PAYLOAD,
+    MALPEDIA_YARA_LIST,
+    MALPEDIA_YARA_NAME,
+    MALPEDIA_YARA_PAYLOAD,
+    MALPEDIA_YARA_RAW,
+    MALPEDIA_YARA_SOURCE,
+    MALPEDIA_ZIP,
 )
 
 
@@ -840,6 +864,214 @@ class ProviderClientTests(unittest.TestCase):
                 ),
                 "50592.py",
             )
+
+    def test_malpedia_search_two_gets_and_optional_token(self) -> None:
+        transport = SequentialTransport(MALPEDIA_FIND_FAMILY, MALPEDIA_FIND_ACTOR)
+        out = malpedia.search("emotet", transport=transport)
+        self.assertEqual(len(transport.requests), 2)
+        family_req, actor_req = transport.requests
+        self.assertEqual(family_req.method, "GET")
+        self.assertEqual(urlparse(family_req.url).hostname, "malpedia.caad.fkie.fraunhofer.de")
+        self.assertEqual(urlparse(family_req.url).path, "/api/find/family/emotet")
+        self.assertEqual(urlparse(actor_req.url).path, "/api/find/actor/emotet")
+        self.assertNotIn("Authorization", family_req.headers)
+        self.assertEqual(out["provider"], "malpedia")
+        self.assertEqual(out["families"][0]["name"], MALPEDIA_FAMILY_ID)
+        self.assertEqual(out["actors"][0]["name"], MALPEDIA_ACTOR_ID)
+        authed = SequentialTransport(MALPEDIA_FIND_FAMILY, MALPEDIA_FIND_ACTOR)
+        malpedia.search("emotet", token="fixture-token", transport=authed)
+        self.assertEqual(
+            authed.requests[0].headers.get("Authorization"), "apitoken fixture-token"
+        )
+
+    def test_malpedia_family_yara_lists_version(self) -> None:
+        family_t = CapturingTransport(MALPEDIA_FAMILY_PAYLOAD)
+        family_out = malpedia.family(MALPEDIA_FAMILY_ID, transport=family_t)
+        self.assertEqual(
+            urlparse(family_t.request.url).path, f"/api/get/family/{MALPEDIA_FAMILY_ID}"
+        )
+        self.assertEqual(family_out["common_name"], "Emotet")
+        self.assertIn("Geodo", family_out["alt_names"])
+        self.assertEqual(family_out["uuid"], MALPEDIA_FAMILY_PAYLOAD["uuid"])
+        self.assertIn("471:20200414:understanding:ca95961", family_out["library_entries"])
+        actor_t = CapturingTransport(MALPEDIA_ACTOR_PAYLOAD)
+        actor_out = malpedia.actor(MALPEDIA_ACTOR_ID, transport=actor_t)
+        self.assertEqual(
+            urlparse(actor_t.request.url).path, f"/api/get/actor/{MALPEDIA_ACTOR_ID}"
+        )
+        self.assertEqual(actor_out["common_name"], "APT28")
+        yara_t = CapturingTransport(MALPEDIA_YARA_PAYLOAD)
+        yara_out = malpedia.yara(MALPEDIA_FAMILY_ID, transport=yara_t)
+        self.assertEqual(
+            urlparse(yara_t.request.url).path, f"/api/get/yara/{MALPEDIA_FAMILY_ID}"
+        )
+        self.assertEqual(yara_out["rules"][0]["filename"], MALPEDIA_YARA_NAME)
+        self.assertEqual(yara_out["rules"][0]["source"], MALPEDIA_YARA_SOURCE)
+        fams = malpedia.families(
+            limit=2, transport=CapturingTransport(MALPEDIA_FAMILIES)
+        )
+        self.assertEqual(fams["results"], MALPEDIA_FAMILIES[:2])
+        acts = malpedia.actors(transport=CapturingTransport(MALPEDIA_ACTORS))
+        self.assertEqual(acts["results"][0], MALPEDIA_ACTOR_ID)
+        ver = malpedia.version(transport=CapturingTransport(MALPEDIA_VERSION_PAYLOAD))
+        self.assertEqual(ver["version"], 26109)
+        full_fams = malpedia.families(
+            full=True, transport=CapturingTransport(MALPEDIA_FAMILIES_FULL)
+        )
+        self.assertTrue(full_fams["full"])
+        self.assertEqual(
+            full_fams["results"][MALPEDIA_FAMILY_ID]["common_name"], "Emotet"
+        )
+        full_acts = malpedia.actors(
+            full=True, transport=CapturingTransport(MALPEDIA_ACTORS_FULL)
+        )
+        self.assertEqual(full_acts["results"][MALPEDIA_ACTOR_ID]["value"], "APT28")
+
+    def test_malpedia_guest_bib_misp_references_yara_index(self) -> None:
+        bib_t = HtmlTransport(MALPEDIA_BIB)
+        bib_out = malpedia.bib(family="win.owowa", transport=bib_t)
+        self.assertEqual(
+            urlparse(bib_t.request.url).path, "/api/get/bib/family/win.owowa"
+        )
+        self.assertEqual(bib_out["entries"][0]["key"], "kupreev:20250410:goffee:adb0ca3")
+        self.assertEqual(
+            bib_out["entries"][0]["title"],
+            "GOFFEE continues to attack organizations in Russia",
+        )
+        actor_bib = HtmlTransport(MALPEDIA_BIB)
+        malpedia.bib(actor="goffee", transport=actor_bib)
+        self.assertEqual(
+            urlparse(actor_bib.request.url).path, "/api/get/bib/actor/goffee"
+        )
+        all_bib = HtmlTransport(MALPEDIA_BIB)
+        malpedia.bib(transport=all_bib)
+        self.assertEqual(urlparse(all_bib.request.url).path, "/api/get/bib")
+        misp_out = malpedia.misp(transport=CapturingTransport(MALPEDIA_MISP))
+        self.assertEqual(misp_out["galaxy"]["name"], "Malpedia")
+        refs_t = CapturingTransport(MALPEDIA_REFERENCES)
+        refs = malpedia.references(url=MALPEDIA_REF_URL, transport=refs_t)
+        self.assertEqual(urlparse(refs_t.request.url).path, "/api/get/references")
+        self.assertEqual(refs["malpedia_version"], 26109)
+        self.assertEqual(refs["results"][MALPEDIA_REF_URL][1]["id"], "goffee")
+        listed = malpedia.yara_list(
+            family=MALPEDIA_FAMILY_ID, transport=CapturingTransport(MALPEDIA_YARA_LIST)
+        )
+        self.assertEqual(listed["total_rules"], 1)
+        self.assertEqual(
+            listed["results"][MALPEDIA_FAMILY_ID][0]["path"],
+            f"/{MALPEDIA_FAMILY_ID}/yara/tlp_white/{MALPEDIA_YARA_NAME}",
+        )
+        after_t = CapturingTransport(MALPEDIA_YARA_PAYLOAD)
+        after = malpedia.yara_after("2026-01-01", transport=after_t)
+        self.assertEqual(
+            urlparse(after_t.request.url).path, "/api/get/yara/after/2026-01-01"
+        )
+        self.assertEqual(after["rules"][0]["filename"], MALPEDIA_YARA_NAME)
+
+    def test_malpedia_yara_dump_and_family_zip_write_files(self) -> None:
+        captured = {}
+
+        def send_raw(request):
+            captured["request"] = request
+            return HttpResponse(
+                status=200,
+                headers={
+                    "Content-Type": "application/yara",
+                    "Content-Disposition": "attachment; filename=malpedia_tlp_white.yar",
+                },
+                body=MALPEDIA_YARA_RAW.encode("utf-8"),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = malpedia.yara_dump(tlp="white", output=tmp, transport=send_raw)
+            path = Path(out["path"])
+            self.assertEqual(
+                urlparse(captured["request"].url).path, "/api/get/yara/tlp_white/raw"
+            )
+            self.assertEqual(out["filename"], "malpedia_tlp_white.yar")
+            self.assertEqual(path.read_text(encoding="utf-8"), MALPEDIA_YARA_RAW)
+
+        def send_auto(request):
+            captured["request"] = request
+            return HttpResponse(
+                status=200,
+                headers={
+                    "Content-Type": "application/zip",
+                    "Content-Disposition": "attachment; filename=malpedia_auto_yar.zip",
+                },
+                body=MALPEDIA_ZIP,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = malpedia.yara_dump(
+                auto=True, as_zip=True, output=tmp, transport=send_auto
+            )
+            self.assertEqual(
+                urlparse(captured["request"].url).path, "/api/get/yara/auto/zip"
+            )
+            self.assertEqual(Path(out["path"]).read_bytes(), MALPEDIA_ZIP)
+
+        def send_family_zip(request):
+            captured["request"] = request
+            return HttpResponse(
+                status=200,
+                headers={
+                    "Content-Type": "application/zip",
+                    "Content-Disposition": 'attachment; filename="win.emotet.zip"',
+                },
+                body=MALPEDIA_ZIP,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = malpedia.yara(
+                MALPEDIA_FAMILY_ID, as_zip=True, output=tmp, transport=send_family_zip
+            )
+            self.assertEqual(
+                urlparse(captured["request"].url).path,
+                f"/api/get/yara/{MALPEDIA_FAMILY_ID}/zip",
+            )
+            self.assertEqual(out["family"], MALPEDIA_FAMILY_ID)
+            self.assertEqual(Path(out["path"]).read_bytes(), MALPEDIA_ZIP)
+
+    def test_malpedia_samples_and_download_send_apitoken(self) -> None:
+        samples_t = CapturingTransport(MALPEDIA_SAMPLES_PAYLOAD)
+        samples_out = malpedia.samples(
+            MALPEDIA_FAMILY_ID, token="tok", transport=samples_t
+        )
+        self.assertEqual(
+            urlparse(samples_t.request.url).path,
+            f"/api/list/samples/{MALPEDIA_FAMILY_ID}",
+        )
+        self.assertEqual(samples_t.request.headers.get("Authorization"), "apitoken tok")
+        self.assertEqual(samples_out["results"][0]["md5"], MALPEDIA_HASH)
+        info_t = CapturingTransport(MALPEDIA_SAMPLE_INFO)
+        info = malpedia.sample(MALPEDIA_HASH, token="tok", transport=info_t)
+        self.assertEqual(
+            urlparse(info_t.request.url).path, f"/api/get/sample/{MALPEDIA_HASH}/info"
+        )
+        self.assertEqual(info["info"]["family"], MALPEDIA_FAMILY_ID)
+        captured = {}
+
+        def send(request):
+            captured["request"] = request
+            return HttpResponse(
+                status=200,
+                headers={"Content-Type": "application/zip"},
+                body=MALPEDIA_ZIP,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = malpedia.download(
+                MALPEDIA_HASH, token="tok", output=tmp, transport=send
+            )
+            path = Path(out["path"])
+            self.assertEqual(
+                urlparse(captured["request"].url).path,
+                f"/api/get/sample/{MALPEDIA_HASH}/zip",
+            )
+            self.assertEqual(captured["request"].headers.get("Authorization"), "apitoken tok")
+            self.assertEqual(path.read_bytes(), MALPEDIA_ZIP)
+            self.assertEqual(out["filename"], f"{MALPEDIA_HASH}.zip")
 
 
 if __name__ == "__main__":

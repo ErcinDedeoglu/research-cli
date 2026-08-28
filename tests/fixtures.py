@@ -478,6 +478,121 @@ EDB_DORK_HTML = f"""<html><body>
 <pre>These are server cluster reports, great for info gathering.</pre>
 </body></html>"""
 
+MALPEDIA_FAMILY_ID = "win.emotet"
+MALPEDIA_ACTOR_ID = "apt28"
+MALPEDIA_HASH = "00112233445566778899aabbccddeeff"
+MALPEDIA_YARA_NAME = "win.emotet_auto.yar"
+MALPEDIA_YARA_SOURCE = "rule win_emotet_auto {\n    condition: true\n}\n"
+MALPEDIA_FIND_FAMILY = [
+    {"name": MALPEDIA_FAMILY_ID, "alt_names": ["Geodo", "Heodo"]},
+]
+MALPEDIA_FIND_ACTOR = [
+    {"name": MALPEDIA_ACTOR_ID, "alt_names": ["Fancy Bear"]},
+]
+MALPEDIA_FAMILY_PAYLOAD = {
+    "common_name": "Emotet",
+    "alt_names": ["Geodo", "Heodo"],
+    "description": "Fixture banking trojan",
+    "attribution": ["TA542"],
+    "updated": "2026-08-25",
+    "urls": ["https://malpedia.caad.fkie.fraunhofer.de/details/win.emotet"],
+    "notes": [],
+    "uuid": "d29eb927-d53d-4af2-b6ce-17b3a1b34fe7",
+    "library_entries": ["471:20200414:understanding:ca95961"],
+    "sources": [],
+}
+MALPEDIA_ACTOR_PAYLOAD = {
+    "value": "APT28",
+    "common_name": "APT28",
+    "synonyms": ["Fancy Bear"],
+    "description": "Fixture actor",
+    "updated": "2026-01-01",
+    "uuid": "actor-uuid-apt28",
+    "families": {},
+    "meta": {"refs": ["https://example.com/apt28"]},
+}
+MALPEDIA_FAMILIES = [MALPEDIA_FAMILY_ID, "win.qakbot", "apk.anubis"]
+MALPEDIA_ACTORS = [MALPEDIA_ACTOR_ID, "lazarus_group"]
+MALPEDIA_FAMILIES_FULL = {
+    MALPEDIA_FAMILY_ID: {
+        "common_name": "Emotet",
+        "updated": "2026-08-25",
+        "uuid": "d29eb927-d53d-4af2-b6ce-17b3a1b34fe7",
+    }
+}
+MALPEDIA_ACTORS_FULL = {
+    MALPEDIA_ACTOR_ID: {
+        "value": "APT28",
+        "description": "Fixture actor",
+        "uuid": "actor-uuid-apt28",
+    }
+}
+MALPEDIA_YARA_PAYLOAD = {"tlp_white": {MALPEDIA_YARA_NAME: MALPEDIA_YARA_SOURCE}}
+MALPEDIA_YARA_LIST = {
+    MALPEDIA_FAMILY_ID: [
+        {
+            "path": f"/{MALPEDIA_FAMILY_ID}/yara/tlp_white/{MALPEDIA_YARA_NAME}",
+            "tlp": "tlp_white",
+        }
+    ]
+}
+MALPEDIA_YARA_RAW = "rule fixture_white {\n    condition: true\n}\n"
+MALPEDIA_BIB = """@online{kupreev:20250410:goffee:adb0ca3,
+   author = {Oleg Kupreev},
+   title = {{GOFFEE continues to attack organizations in Russia}},
+   date = {2025-04-10},
+   organization = {Kaspersky Labs},
+   url = {https://securelist.com/goffee-apt-new-attacks/116139/},
+   language = {English},
+   urldate = {2025-05-02}
+}
+"""
+MALPEDIA_MISP = {
+    "name": "Malpedia",
+    "type": "malpedia",
+    "uuid": "1d1c9af9-37fa-4deb-a928-f9b0abc7354a",
+    "values": [{"value": "Emotet", "description": "Fixture galaxy entry"}],
+}
+MALPEDIA_REF_URL = "https://securelist.com/goffee-apt-new-attacks/116139/"
+MALPEDIA_REFERENCES = {
+    "malpedia_version": 26109,
+    "references": {
+        MALPEDIA_REF_URL: [
+            {
+                "type": "family",
+                "id": "win.owowa",
+                "common_name": "Owowa",
+                "alt_names": [],
+                "url": "/details/win.owowa",
+            },
+            {
+                "type": "actor",
+                "id": "goffee",
+                "common_name": "GOFFEE",
+                "alt_names": [],
+                "url": "/actor/goffee",
+            },
+        ]
+    },
+}
+MALPEDIA_VERSION_PAYLOAD = {"version": 26109, "date": "2026-08-25T20:38:17Z"}
+MALPEDIA_SAMPLES_PAYLOAD = [
+    {
+        "sha256": "aa" * 32,
+        "md5": MALPEDIA_HASH,
+        "status": "unpacked",
+        "version": "202001",
+        "family": MALPEDIA_FAMILY_ID,
+    }
+]
+MALPEDIA_SAMPLE_INFO = {
+    "sha256": "aa" * 32,
+    "md5": MALPEDIA_HASH,
+    "family": MALPEDIA_FAMILY_ID,
+    "status": "unpacked",
+}
+MALPEDIA_ZIP = b"PK\x03\x04fixture-malpedia-zip"
+
 
 _POST_ROUTES = {
     "/api/mcp-search": BGPT_PAYLOAD,
@@ -527,6 +642,94 @@ class FixtureHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
+        if path.startswith("/api/find/family/"):
+            self._send(200, MALPEDIA_FIND_FAMILY)
+            return
+        if path.startswith("/api/find/actor/"):
+            self._send(200, MALPEDIA_FIND_ACTOR)
+            return
+        if path.startswith("/api/get/family/"):
+            self._send(200, MALPEDIA_FAMILY_PAYLOAD)
+            return
+        if path.startswith("/api/get/actor/"):
+            self._send(200, MALPEDIA_ACTOR_PAYLOAD)
+            return
+        if path == "/api/list/families":
+            self._send(200, MALPEDIA_FAMILIES)
+            return
+        if path == "/api/list/actors":
+            self._send(200, MALPEDIA_ACTORS)
+            return
+        if path == "/api/get/families":
+            self._send(200, MALPEDIA_FAMILIES_FULL)
+            return
+        if path == "/api/get/actors":
+            self._send(200, MALPEDIA_ACTORS_FULL)
+            return
+        if path == "/api/get/bib" or path.startswith("/api/get/bib/"):
+            self._send_text(MALPEDIA_BIB)
+            return
+        if path == "/api/get/misp":
+            self._send(200, MALPEDIA_MISP)
+            return
+        if path == "/api/get/references":
+            self._send(200, MALPEDIA_REFERENCES)
+            return
+        if path == "/api/list/yara":
+            self._send(200, MALPEDIA_YARA_LIST)
+            return
+        if path.startswith("/api/get/yara/after/"):
+            self._send(200, MALPEDIA_YARA_PAYLOAD)
+            return
+        if path == "/api/get/yara/auto/raw" or (
+            path.startswith("/api/get/yara/tlp_") and path.endswith("/raw")
+        ):
+            raw = MALPEDIA_YARA_RAW.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/yara")
+            self.send_header(
+                "Content-Disposition", "attachment; filename=malpedia_tlp_white.yar"
+            )
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if (
+            path == "/api/get/yara/auto/zip"
+            or (path.startswith("/api/get/yara/tlp_") and path.endswith("/zip"))
+            or (path.startswith("/api/get/yara/") and path.endswith("/zip"))
+        ):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header(
+                "Content-Disposition", 'attachment; filename="win.emotet.zip"'
+            )
+            self.send_header("Content-Length", str(len(MALPEDIA_ZIP)))
+            self.end_headers()
+            self.wfile.write(MALPEDIA_ZIP)
+            return
+        if path.startswith("/api/get/yara/"):
+            self._send(200, MALPEDIA_YARA_PAYLOAD)
+            return
+        if path == "/api/get/version":
+            self._send(200, MALPEDIA_VERSION_PAYLOAD)
+            return
+        if path.startswith("/api/list/samples") or path.startswith("/api/get/sample/"):
+            if not (self.headers.get("Authorization") or "").startswith("apitoken "):
+                self._send(403, {"detail": "Authentication credentials were not provided."})
+                return
+            if path.endswith("/zip"):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Length", str(len(MALPEDIA_ZIP)))
+                self.end_headers()
+                self.wfile.write(MALPEDIA_ZIP)
+                return
+            if path.endswith("/info"):
+                self._send(200, MALPEDIA_SAMPLE_INFO)
+                return
+            self._send(200, MALPEDIA_SAMPLES_PAYLOAD)
+            return
         xhr = self.headers.get("X-Requested-With")
         if xhr == "XMLHttpRequest":
             if path == "/search":
