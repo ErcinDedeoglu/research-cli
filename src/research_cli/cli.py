@@ -61,6 +61,7 @@ examples:
   research-cli sploitus cve CVE-2021-44228
   research-cli sploitus product wordpress
   research-cli sploitus latest
+  research-cli sploitus home
   research-cli sploitus autocomplete log4
 """
 
@@ -302,13 +303,13 @@ def build_parser() -> argparse.ArgumentParser:
         dest="search_type",
         default="exploits",
         choices=("exploits", "tools"),
-        help="exploits (PoC/MSF) or tools (hacktools)",
+        help="UI toggle: Exploits (PoC/MSF) or Tools (hacktools)",
     )
     sploitus_search.add_argument(
         "--sort",
         default="default",
-        choices=("default", "date", "score"),
-        help="Sploitus ranking: default, date, or score (CVSS)",
+        choices=("default", "relevance", "date", "score", "cvss"),
+        help="UI sort: Relevance (default), Date, Score (CVSS)",
     )
     sploitus_search.add_argument("--offset", type=int, default=0)
     sploitus_search.add_argument(
@@ -359,6 +360,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=50,
         help="Max hits (site pages 50 at a time)",
+    )
+    sploitus_home = sploitus_sub.add_parser(
+        "home",
+        help="Homepage widgets: trending CVEs, popular exploits, latest",
+        parents=[shared],
     )
     sploitus_ac = sploitus_sub.add_parser(
         "autocomplete",
@@ -570,6 +576,12 @@ def _dispatch_sploitus(
     if args.operation == "latest":
         return sploitus.latest(
             limit=args.limit,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+    if args.operation == "home":
+        return sploitus.home(
             origin=origin,
             transport=transport,
             timeout=timeout,

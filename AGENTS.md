@@ -36,7 +36,7 @@ src/research_cli/providers/exa.py    → POST /search, POST /contents
 src/research_cli/providers/firecrawl.py → scrape, search, map
 src/research_cli/providers/firecrawl_papers.py → papers search/inspect/read/related
 src/research_cli/providers/reddit.py     → POST /api/v1/access_token, GET /search, GET /comments/{id}, GET /r/{sub}/{sort}
-src/research_cli/providers/sploitus.py   → POST /search; GET /autocomplete; GET /exploit?id=; GET /cve/{id}; GET /product/{slug}[/page/N]; GET /latest[/page/N]
+src/research_cli/providers/sploitus.py   → POST /search; GET /autocomplete; GET /exploit?id=; GET /cve/{id}; GET /product/{slug}[/page/N]; GET /latest[/page/N]; GET /
 skills/research-cli/SKILL.md         → agent playbook (not under .grok/; copy to kenopahq/skills/research-cli on change)
 tests/test_skill.py                  → skill ↔ CLI parser/keys alignment
 tests/test_providers.py              → injectable HTTP: method/path/auth/parse

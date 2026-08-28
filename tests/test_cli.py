@@ -224,6 +224,7 @@ class FixtureServerCliTests(unittest.TestCase):
             (["sploitus", "product", "wordpress"], "CVE-2026-60137"),
             (["sploitus", "latest"], "Fixture latest exploit"),
             (["sploitus", "autocomplete", "log4"], "log4j"),
+            (["sploitus", "home"], "CVE-2025-55182"),
         ]
         for args, needle in cases:
             proc = self._cli(*args)

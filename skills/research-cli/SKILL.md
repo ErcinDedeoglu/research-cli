@@ -78,7 +78,7 @@ For CVE, exploit, PoC, RCE, or hacktool queries, also run:
 research-cli sploitus search "QUERY"
 ```
 
-Merge the JSON. Then scrape/read specific URLs or paper IDs if needed. For Reddit, search then `reddit thread` on the best permalinks; `reddit subreddit` to browse a community. For Sploitus: `search` then `exploit` on an id for the full PoC; `cve` / `product` / `latest` for the HTML hubs; `autocomplete` for typeahead. Pass `--source` on search when you need PoC bodies in the hit list; `--type tools` searches hacktools.
+Merge the JSON. Then scrape/read specific URLs or paper IDs if needed. For Reddit, search then `reddit thread` on the best permalinks; `reddit subreddit` to browse a community. For Sploitus: `search` then `exploit` on an id for the full PoC (CVSS, EPSS, entry point, tags, related); `cve` / `product` / `latest` / `home` for the HTML hubs; `autocomplete` for typeahead. Pass `--source` on search when you need PoC bodies in the hit list; `--type tools` searches hacktools.
 
 **bgpt** papers (optional `BGPT_API_KEY`). **brave** `llm-context` is page chunks (`BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`); `search` is titles/URLs. **exa** semantic search (`EXA_API_KEY`). **firecrawl** web search + paper index (`FIRECRAWL_API_KEY`). **reddit** posts + comments (`REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET`). **sploitus** exploit/hacktool index (no key).
 
@@ -102,14 +102,15 @@ research-cli reddit search "async rust" --subreddit rust
 research-cli reddit thread abc123 --sort top --limit 50
 research-cli reddit thread https://www.reddit.com/r/python/comments/abc123/title/
 research-cli reddit subreddit rust --sort top --time week --limit 25
-research-cli sploitus search "CVE-2021-44228" --sort score --limit 10
-research-cli sploitus search "wordpress rce" --source
+research-cli sploitus search "CVE-2021-44228" --type exploits --sort score --limit 10
+research-cli sploitus search "wordpress rce" --type exploits --sort relevance --source
 research-cli sploitus search "c2" --type tools --sort date
 research-cli sploitus exploit EDB-ID:50592
 research-cli sploitus exploit https://sploitus.com/exploit?id=EDB-ID:50592
 research-cli sploitus cve CVE-2021-44228 --limit 20
 research-cli sploitus product wordpress --limit 50
 research-cli sploitus latest --limit 25
+research-cli sploitus home
 research-cli sploitus autocomplete log4
 ```
 

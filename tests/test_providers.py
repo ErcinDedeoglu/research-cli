@@ -67,6 +67,7 @@ from fixtures import (  # noqa: E402
     SPLOITUS_CVE,
     SPLOITUS_CVE_HTML,
     SPLOITUS_EXPLOIT_HTML,
+    SPLOITUS_HOME_HTML,
     SPLOITUS_HREF,
     SPLOITUS_ID,
     SPLOITUS_LATEST_HTML,
@@ -559,6 +560,16 @@ class ProviderClientTests(unittest.TestCase):
         self.assertEqual(body["type"], "tools")
         self.assertEqual(body["sort"], "date")
         self.assertEqual(body["offset"], 10)
+        rel = CapturingTransport(SPLOITUS_SEARCH_PAYLOAD)
+        sploitus.search("q", sort="relevance", transport=rel)
+        self.assertEqual(
+            json.loads(rel.request.body.decode("utf-8"))["sort"], "default"
+        )
+        cvss = CapturingTransport(SPLOITUS_SEARCH_PAYLOAD)
+        sploitus.search("q", sort="cvss", transport=cvss)
+        self.assertEqual(
+            json.loads(cvss.request.body.decode("utf-8"))["sort"], "score"
+        )
         hit = out["results"][0]
         self.assertEqual(hit["id"], SPLOITUS_TOOL_ID)
         self.assertEqual(hit["title"], SPLOITUS_TOOL_TITLE)
@@ -619,6 +630,14 @@ class ProviderClientTests(unittest.TestCase):
         self.assertEqual(hit["cve"], [SPLOITUS_CVE])
         self.assertIn("print('fixture poc')", hit["source"])
         self.assertEqual(hit["href"], SPLOITUS_HREF)
+        self.assertEqual(hit["entry_point"]["parameter"], "methodToCall")
+        self.assertEqual(hit["entry_point"]["path"], "ADSearch.cc")
+        self.assertEqual(hit["details"]["reporter"], "kozmer")
+        self.assertEqual(hit["cvss"]["score"], 10.0)
+        self.assertEqual(hit["epss"]["value"], "100.0%")
+        self.assertEqual(hit["tags"], ["rce"])
+        self.assertEqual(hit["products"][0]["slug"], "apache-log4j2")
+        self.assertEqual(hit["related"][0]["id"], "KITPLOIT:RELATED")
 
     def test_sploitus_cve_and_latest_parse_cards(self) -> None:
         cve_out = sploitus.cve(
@@ -651,6 +670,15 @@ class ProviderClientTests(unittest.TestCase):
         self.assertEqual(out["results"][0]["id"], "CVE-2026-60137")
         self.assertEqual(out["results"][1]["id"], "CVE-2025-6389")
         self.assertEqual(out["total"], 2)
+
+    def test_sploitus_home_widgets(self) -> None:
+        transport = HtmlTransport(SPLOITUS_HOME_HTML)
+        out = sploitus.home(transport=transport)
+        self.assertEqual(urlparse(transport.request.url).path, "/")
+        self.assertEqual(out["operation"], "home")
+        self.assertEqual(out["widgets"]["trending_cves"][0]["id"], "CVE-2025-55182")
+        self.assertEqual(out["widgets"]["trending_cves"][0]["severity"], "CRITICAL 10.0")
+        self.assertEqual(out["results"][0]["title"], "Fixture latest exploit")
 
 
 if __name__ == "__main__":

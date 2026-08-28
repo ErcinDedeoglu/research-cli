@@ -26,6 +26,13 @@ PAGE_SIZE = 10
 HUB_PAGE_SIZE = 50
 SEARCH_TYPES = ("exploits", "tools")
 SORTS = ("default", "date", "score")
+_SORT_ALIASES = {
+    "default": "default",
+    "relevance": "default",
+    "date": "date",
+    "score": "score",
+    "cvss": "score",
+}
 FRONTEND_HEADER = "sploitus-frontend"
 _MAX_HUB_PAGES = 20
 _CVE_RE = re.compile(r"(CVE-\d{4}-\d+)", re.I)
@@ -51,6 +58,33 @@ _METRIC_RE = re.compile(
 )
 _DESC_RE = re.compile(
     r'class="?vulnerability__description[^"]*"?>(.*?)</p>', re.I | re.S
+)
+_DETAIL_PAIR_RE = re.compile(
+    r"<span class=exploit__detail-label>(.*?)</span>\s*"
+    r"<span class=exploit__detail-value>(.*?)</span>",
+    re.I | re.S,
+)
+_COMPONENT_PAIR_RE = re.compile(
+    r"<span class=exploit__component-label>(.*?)</span>\s*"
+    r"<span class=exploit__component-value>(.*?)</span>",
+    re.I | re.S,
+)
+_DESC_TEXT_RE = re.compile(
+    r"<div class=exploit__description-text>(.*?)</div>", re.I | re.S
+)
+_EXPLOIT_TAG_RE = re.compile(r"<[^>]*class=exploit__tag[^>]*>(.*?)</", re.I | re.S)
+_PRODUCT_LINK_RE = re.compile(
+    r"<a class=exploit__product-link href=([^>\s]+)>([^<]+)</a>", re.I
+)
+_CVSS_NUMBER_RE = re.compile(r"exploit__cvss-number[^>]*>([^<]+)", re.I)
+_CVSS_LABEL_RE = re.compile(r"exploit__cvss-label[^>]*>([^<]+)", re.I)
+_CVSS_VERSION_RE = re.compile(r"exploit__cvss-version[^>]*>([^<]+)", re.I)
+_CVSS_VECTOR_RE = re.compile(r"exploit__vector-text[^>]*>([^<]+)", re.I)
+_EPSS_VALUE_RE = re.compile(r"exploit__epss-value[^>]*>([^<]+)", re.I)
+_EPSS_OF_RE = re.compile(r"exploit__epss-of[^>]*>([^<]+)", re.I)
+_CARD_SECTION_RE = re.compile(r"<section class=card>(.*?)</section>", re.I | re.S)
+_SEVERITY_RE = re.compile(
+    r'vulnerability__severity--(\w+)[^>]*>([^<]+)', re.I
 )
 
 
@@ -84,7 +118,7 @@ def _normalize_type(value: str | None) -> str:
 
 def _normalize_sort(value: str | None) -> str:
     sort = (value or "default").strip().lower()
-    return sort if sort in SORTS else "default"
+    return _SORT_ALIASES.get(sort, "default")
 
 
 def exploit_url(exploit_id: str) -> str:
@@ -198,6 +232,15 @@ def build_product_request(
     return HttpRequest(
         method="GET",
         url=join_url(origin, path),
+        headers=_page_headers(origin),
+        body=None,
+    )
+
+
+def build_home_request(*, origin: str = DEFAULT_ORIGIN) -> HttpRequest:
+    return HttpRequest(
+        method="GET",
+        url=join_url(origin, "/"),
         headers=_page_headers(origin),
         body=None,
     )
@@ -495,6 +538,9 @@ def _parse_cards(html: str) -> list[dict[str, Any]]:
         tags = [tag for tag in tags if tag]
         if tags:
             record["tag"] = tags[0] if len(tags) == 1 else tags
+        sev = _SEVERITY_RE.search(body)
+        if sev:
+            record["severity"] = _plain(sev.group(2)) or sev.group(1)
         if record.get("id") or record.get("title"):
             results.append(record)
     return results
@@ -524,6 +570,19 @@ def _next_path(html: str) -> str | None:
     if not path.startswith("/"):
         path = "/" + path
     return path
+
+
+def _label_key(label: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", label.lower().strip(": ")).strip("_")
+
+
+def _pairs(regex: re.Pattern[str], html: str) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for left, right in regex.findall(html):
+        label, value = _plain(left), _plain(right)
+        if label and value:
+            out.append((label, value))
+    return out
 
 
 def parse_exploit_html(html: str, *, exploit_id: str | None = None) -> dict[str, Any]:
@@ -594,8 +653,85 @@ def parse_exploit_html(html: str, *, exploit_id: str | None = None) -> dict[str,
         record["cve"] = cves
     if views is not None:
         record["views"] = views
-    if description:
+    texts = [_plain(chunk) for chunk in _DESC_TEXT_RE.findall(html)]
+    texts = [chunk for chunk in texts if chunk]
+    if texts:
+        record["description"] = texts[0]
+    elif description:
         record["description"] = description
+    details: dict[str, str] = {}
+    entry_point: dict[str, str] = {}
+    affected: list[dict[str, str]] = []
+    for label, value in _pairs(_DETAIL_PAIR_RE, html):
+        key = _label_key(label)
+        if key in {"parameter", "path"}:
+            entry_point[key] = value
+        elif key in {"modified", "last_seen", "reporter"}:
+            details[key] = value
+        elif key:
+            affected.append({"product": label, "versions": value})
+    if len(texts) > 1:
+        entry_point["notes"] = texts[1]
+    if entry_point:
+        record["entry_point"] = entry_point
+    if details:
+        record["details"] = details
+        if details.get("modified") and not record.get("modified"):
+            record["modified"] = details["modified"]
+    if affected:
+        record["affected"] = affected
+    cvss: dict[str, Any] = {}
+    num = _CVSS_NUMBER_RE.search(html)
+    if num:
+        raw_score = _plain(num.group(1))
+        try:
+            cvss["score"] = float(raw_score)
+        except ValueError:
+            cvss["score"] = raw_score
+        record.setdefault("score", cvss["score"])
+    lab = _CVSS_LABEL_RE.search(html)
+    if lab:
+        cvss["severity"] = _plain(lab.group(1))
+    ver = _CVSS_VERSION_RE.search(html)
+    if ver:
+        cvss["version"] = _plain(ver.group(1))
+    vec = _CVSS_VECTOR_RE.search(html)
+    if vec:
+        cvss["vector"] = _plain(vec.group(1))
+    components = {
+        _label_key(label): value
+        for label, value in _pairs(_COMPONENT_PAIR_RE, html)
+    }
+    if components:
+        cvss["components"] = components
+    if cvss:
+        record["cvss"] = cvss
+    epss_v = _EPSS_VALUE_RE.search(html)
+    if epss_v:
+        epss: dict[str, str] = {"value": _plain(epss_v.group(1))}
+        epss_of = _EPSS_OF_RE.search(html)
+        if epss_of:
+            epss["note"] = _plain(epss_of.group(1))
+        record["epss"] = epss
+    tags = [_plain(tag) for tag in _EXPLOIT_TAG_RE.findall(html)]
+    tags = [tag for tag in tags if tag]
+    if tags:
+        record["tags"] = tags
+    products: list[dict[str, str]] = []
+    for href, name in _PRODUCT_LINK_RE.findall(html):
+        slug = product_slug(href)
+        products.append(
+            {
+                "name": _plain(name),
+                "slug": slug,
+                "url": f"{DEFAULT_ORIGIN}/product/{slug}",
+            }
+        )
+    if products:
+        record["products"] = products
+    related = _parse_cards(html)
+    if related:
+        record["related"] = related
     if source:
         record["source"] = source
     if not record:
@@ -681,6 +817,24 @@ def parse_latest_html(html: str) -> dict[str, Any]:
         "provider": "sploitus",
         "operation": "latest",
         "results": results,
+    }
+
+
+def parse_home_html(html: str) -> dict[str, Any]:
+    widgets: dict[str, list[dict[str, Any]]] = {}
+    for block in _CARD_SECTION_RE.findall(html):
+        title_m = re.search(r"card__title>(.*?)</h2>", block, re.I | re.S)
+        title = _plain(title_m.group(1)) if title_m else ""
+        cards = _parse_cards(block)
+        if not cards:
+            continue
+        key = _label_key(title) or "items"
+        widgets[key] = cards
+    return {
+        "provider": "sploitus",
+        "operation": "home",
+        "results": widgets.get("latest_additions") or widgets.get("latest") or [],
+        "widgets": widgets,
     }
 
 
@@ -779,6 +933,17 @@ def product(
     if not parsed.get("total"):
         parsed["total"] = len(results)
     return parsed
+
+
+def home(
+    *,
+    origin: str = DEFAULT_ORIGIN,
+    transport: Transport | None = None,
+    timeout: float = 60.0,
+) -> dict[str, Any]:
+    request = build_home_request(origin=origin)
+    html = _execute_html(request, transport=transport, timeout=timeout)
+    return parse_home_html(html)
 
 
 def latest(

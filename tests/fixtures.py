@@ -252,8 +252,29 @@ SPLOITUS_AUTOCOMPLETE = ["log4j", "log4j2", "log4shell"]
 SPLOITUS_EXPLOIT_HTML = """<!doctype html><html><body data-page=exploit>
 <script type=application/ld+json>{"@graph":[{"@type":"TechArticle","headline":"Fixture Sploitus Log4j RCE","url":"https://sploitus.com/exploit?id=EDB-ID:50592","description":"Fixture exploit description","datePublished":"2021-12-14T00:00:00","interactionStatistic":{"@type":"InteractionCounter","userInteractionCount":12},"about":[{"@type":"Thing","identifier":"CVE-2021-44228"}],"hasPart":{"@type":"SoftwareSourceCode","programmingLanguage":"Python","codeRepository":"https://gitlab.example/exploits/50592.py"}}]}</script>
 <div class="avatar logo logo_exploitdb"></div>
+<div class=exploit__description-text>Fixture exploit description</div>
+<span class=exploit__detail-label>Parameter</span><span class=exploit__detail-value>methodToCall</span>
+<span class=exploit__detail-label>Path</span><span class=exploit__detail-value>ADSearch.cc</span>
+<span class=exploit__detail-label>Reporter:</span><span class=exploit__detail-value>kozmer</span>
+<span class=exploit__cvss-number>10.0</span>
+<span class=exploit__cvss-label>HIGH SEVERITY</span>
+<span class=exploit__vector-text>CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H</span>
+<span class=exploit__epss-value>100.0%</span>
+<span class=exploit__tag>rce</span>
+<a class=exploit__product-link href=/product/apache-log4j2>Apache Log4J2</a>
+<a href="/exploit?id=KITPLOIT:RELATED" class=vulnerability><div class=vulnerability__content><div class=vulnerability__title>Related fixture</div></div></a>
 <pre><code data-lang=python>## https://sploitus.com/exploit?id=EDB-ID:50592
 print('fixture poc')</code></pre>
+</body></html>"""
+SPLOITUS_HOME_HTML = """<!doctype html><html><body data-page=search>
+<div class="container home-widgets"><div class=cards>
+<section class=card><div class=card__header><h2 class=card__title>Trending CVEs</h2></div><div class=card__body>
+<a class=vulnerability href=/cve/CVE-2025-55182><div class=vulnerability__content><div class=vulnerability__title>CVE-2025-55182 <span class=vulnerability__count>2 exploits</span></div><div class=vulnerability__meta><span class="vulnerability__severity vulnerability__severity--critical">CRITICAL 10.0</span></div></div></a>
+</div></section>
+<section class=card><div class=card__header><h2 class=card__title>Latest Additions</h2></div><div class=card__body>
+<a href="/exploit?id=9A4610FF-1CD2-5A57-B026-325B42ADF181" class=vulnerability><div class=vulnerability__content><div class=vulnerability__title>Fixture latest exploit</div></div></a>
+</div></section>
+</div></div>
 </body></html>"""
 SPLOITUS_CVE_HTML = """<!doctype html><html><body data-page=cve>
 <script type=application/ld+json>{"@graph":[{"@type":"CollectionPage","name":"1 known exploits for CVE-2021-44228","about":{"@type":"Thing","identifier":"CVE-2021-44228","url":"https://nvd.nist.gov/vuln/detail/CVE-2021-44228","description":"Fixture CVE description"},"mainEntity":{"@type":"ItemList","numberOfItems":1}}]}</script>
@@ -382,6 +403,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
             return
         if path.startswith("/latest"):
             self._send_html(SPLOITUS_LATEST_HTML)
+            return
+        if path == "/":
+            self._send_html(SPLOITUS_HOME_HTML)
             return
         if path == "/search" or path.endswith("/search"):
             self._send(200, REDDIT_SEARCH_PAYLOAD)
