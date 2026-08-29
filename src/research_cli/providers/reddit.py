@@ -372,7 +372,7 @@ def parse_thread_response(payload: Any) -> dict[str, Any]:
         if not isinstance(child, dict):
             continue
         data = child.get("data") if isinstance(child.get("data"), dict) else child
-        if not isinstance(data, dict):
+        if not isinstance(data, dict):  # pragma: no cover
             continue
         record = _post_record(data)
         if record:

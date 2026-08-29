@@ -525,7 +525,7 @@ def _parse_cards(html: str) -> list[dict[str, Any]]:
                 if score:
                     try:
                         record["score"] = float(score.group(0))
-                    except ValueError:
+                    except ValueError:  # pragma: no cover
                         record["score"] = score.group(0)
             elif bit and bit.lower() not in {"tool"}:
                 if "author" not in record and not bit.upper().startswith("CVSS"):

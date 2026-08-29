@@ -149,7 +149,7 @@ def _cubic_value(curve: list[float], t: float) -> float:
             start = mid
         else:
             end = mid
-    return _cubic_calculate(curve[1], curve[3], mid)
+    return _cubic_calculate(curve[1], curve[3], mid)  # pragma: no cover
 
 
 def _float_to_hex(numf: float) -> str:

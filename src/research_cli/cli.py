@@ -45,8 +45,11 @@ providers:
   exploitdb     Exploit-DB search, latest, GHDB, papers, shellcodes (no API key)
   malpedia      Malpedia families, actors, YARA, bib, MISP, references (guest)
   x             X (Twitter) post search and tweet threads (cookie session)
+  help          setup topics (install, keys)
 
 examples:
+  research-cli help install
+  research-cli help keys
   research-cli bgpt search "CRISPR delivery neurons"
   research-cli brave search "rust async runtime" --freshness pw
   research-cli brave llm-context "best practices for RAG"
@@ -104,6 +107,106 @@ examples:
   research-cli x thread 2069347283918000383
   research-cli x thread https://x.com/user/status/2069347283918000383
 """
+
+
+INSTALL_DOC_URL = (
+    "https://raw.githubusercontent.com/ErcinDedeoglu/research-cli/main"
+    "/skills/research-cli/INSTALL.md"
+)
+HELP_DOC_URLS = {"install": INSTALL_DOC_URL}
+HELP_TOPICS = {
+    "install": """\
+# Install research-cli
+
+Goal: `research-cli --version` works on PATH. Then run the skill playbook.
+
+## Frozen binary (no Python)
+
+```bash
+mkdir -p "$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
+base="https://github.com/ErcinDedeoglu/research-cli/releases/latest/download"
+os="$(uname -s)"; arch="$(uname -m)"
+case "$os-$arch" in
+  Darwin-arm64) asset=research-cli-Darwin-arm64 ;;
+  Linux-x86_64) asset=research-cli-Linux-x86_64 ;;
+  Linux-aarch64|Linux-arm64) asset=research-cli-Linux-aarch64 ;;
+  *) echo "unsupported: $os $arch"; exit 1 ;;
+esac
+curl -fsSL -o "$HOME/.local/bin/research-cli" "$base/$asset"
+chmod +x "$HOME/.local/bin/research-cli"
+command -v research-cli
+```
+
+Windows: download `$base/research-cli-Windows-x86_64.exe` as `research-cli.exe` on PATH.
+
+macOS quarantine: `xattr -d com.apple.quarantine "$HOME/.local/bin/research-cli"`.
+
+## Already on PATH
+
+`research-cli --self-update`. `research-cli --version` is SemVer.
+
+## Zipapp / source
+
+- zipapp: `$base/research-cli.pyz` then `python3 research-cli.pyz`
+- checkout: `pip install -e .`
+
+Then write keys (`research-cli help keys`) and run search from the skill.
+""",
+    "keys": """\
+Provider API keys and cookies.
+
+File: `$HOME/.config/research-cli/env` (Windows: `%APPDATA%\\research-cli\\env`), chmod 600. Process env overrides the file.
+
+```
+BRAVE_API_KEY=
+EXA_API_KEY=
+FIRECRAWL_API_KEY=
+REDDIT_CLIENT_ID=
+REDDIT_CLIENT_SECRET=
+# BGPT_API_KEY=
+# X_AUTH_TOKEN=
+# X_CT0=
+```
+
+Provider key map:
+
+  bgpt          BGPT_API_KEY (optional; free tier works without it)
+  brave         BRAVE_API_KEY or BRAVE_SEARCH_API_KEY
+  exa           EXA_API_KEY
+  firecrawl     FIRECRAWL_API_KEY
+  reddit        REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET
+  x             X_AUTH_TOKEN and X_CT0 (browser `auth_token` and `ct0` cookies)
+  sploitus      none
+  exploitdb     none
+  malpedia      none (guest access)
+
+Missing brave, exa, firecrawl, reddit, or x keys exit 2 and name the provider. Dead x cookies also exit 2; if the x cookies are unset, skip x rather than blocking the other providers. Never commit keys or cookies.
+""",
+}
+HELP_TOPIC_ALIASES = {"installation": "install"}
+
+
+def help_topic_payload(topic: str | None) -> dict[str, Any]:
+    if not (topic or "").strip():
+        return {
+            "provider": "help",
+            "topics": sorted(HELP_TOPICS),
+            "aliases": dict(HELP_TOPIC_ALIASES),
+            "hint": "research-cli help install",
+        }
+    key = HELP_TOPIC_ALIASES.get(topic.strip().lower(), topic.strip().lower())
+    body = HELP_TOPICS.get(key)
+    if body is None:
+        known = ", ".join(sorted(HELP_TOPICS))
+        raise ProviderHttpError(
+            "help", 0, f"unknown topic {topic!r}; try: {known}"
+        )
+    payload = {"provider": "help", "topic": key, "body": body}
+    url = HELP_DOC_URLS.get(key)
+    if url:
+        payload["url"] = url
+    return payload
 
 
 def _csv(value: str | None) -> list[str] | None:
@@ -699,6 +802,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--fields",
         help="Comma-separated tweet/reply keys (id,url,text,user,likes,…)",
     )
+    help_p = sub.add_parser(
+        "help",
+        help="Print setup topics (install, keys)",
+    )
+    help_p.add_argument(
+        "topic",
+        nargs="?",
+        default=None,
+        metavar="TOPIC",
+        help="install or keys (alias: installation). Omit to list topics.",
+    )
     return parser
 
 
@@ -1243,6 +1357,8 @@ def _dispatch(
         return _dispatch_malpedia(args, environ, transport, timeout)
     if args.provider == "x":
         return _dispatch_x(args, environ, transport, timeout)
+    if args.provider == "help":
+        return help_topic_payload(getattr(args, "topic", None))
     raise ValueError(f"unknown command: {args.provider} {getattr(args, 'operation', '')}")
 
 

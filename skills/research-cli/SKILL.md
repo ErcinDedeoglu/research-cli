@@ -14,57 +14,21 @@ description: >
 
 # research-cli
 
-Do not call BGPT, Brave, Exa, Firecrawl, Reddit, Sploitus, Exploit-DB, Malpedia, or X/Twitter MCP servers. Run this CLI.
+Run this CLI. Do not call vendor MCP servers. Do not invent subcommands or flags — copy from **Commands** below.
+
+JSON on stdout, errors on stderr. Shared flags on every provider command: `--timeout` (seconds, default 60), `--base-url` (fixture/origin override only). Missing Brave/Exa/Firecrawl/Reddit/X keys exit 2 and name the provider.
 
 ## Version guard
 
-`version:` above must match `research-cli --version`.
-
-1. Missing binary → [Install if missing](#install-if-missing).
-2. Skill older → replace this file with https://raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md
-3. Binary older → --self-update
-4. Match → run commands
-
-## Install if missing
-
-```bash
-command -v research-cli
-mkdir -p "$HOME/.local/bin"
-export PATH="$HOME/.local/bin:$PATH"
-base="https://github.com/ErcinDedeoglu/research-cli/releases/latest/download"
-os="$(uname -s)"; arch="$(uname -m)"
-case "$os-$arch" in
-  Darwin-arm64) asset=research-cli-Darwin-arm64 ;;
-  Linux-x86_64) asset=research-cli-Linux-x86_64 ;;
-  Linux-aarch64|Linux-arm64) asset=research-cli-Linux-aarch64 ;;
-  *) echo "unsupported: $os $arch"; exit 1 ;;
-esac
-curl -fsSL -o "$HOME/.local/bin/research-cli" "$base/$asset"
-chmod +x "$HOME/.local/bin/research-cli"
-```
-
-Windows: `$base/research-cli-Windows-x86_64.exe` → `research-cli.exe` on PATH. macOS quarantine: `xattr -d com.apple.quarantine "$HOME/.local/bin/research-cli"`.
+`version:` must match `research-cli --version`. Missing binary → https://raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/INSTALL.md (no CLI needed). Skill older → replace from https://raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md. Binary older → `--self-update`. Already on PATH: `research-cli help install` is the same install text.
 
 ## Keys
 
-After install, write `$HOME/.config/research-cli/env` (Windows: `%APPDATA%\research-cli\env`). Process env overrides the file. If a required key is missing, ask the user and write it, then run search.
+`research-cli help keys` — env file (`$HOME/.config/research-cli/env`, Windows `%APPDATA%\research-cli\env`), provider key table, missing-key behavior. Missing required key: ask the user, write the file, retry. Skip `x` if cookies are unset; do not block other providers.
 
-```
-BRAVE_API_KEY=
-EXA_API_KEY=
-FIRECRAWL_API_KEY=
-REDDIT_CLIENT_ID=
-REDDIT_CLIENT_SECRET=
-# BGPT_API_KEY=
-# X_AUTH_TOKEN=
-# X_CT0=
-```
+## Search
 
-chmod 600 the file.
-
-## Search / research
-
-On search or research, run **all** of these in parallel with the same query. Do not pick one provider.
+Same query, all of these in parallel. Do not pick one provider.
 
 ```bash
 research-cli bgpt search "QUERY"
@@ -76,43 +40,122 @@ research-cli reddit search "QUERY"
 research-cli x search "QUERY"
 ```
 
-For CVE, exploit, PoC, RCE, or hacktool queries, also run:
+CVE / exploit / PoC / RCE / hacktool — also:
 
 ```bash
 research-cli sploitus search "QUERY"
 research-cli exploitdb search "QUERY"
 ```
 
-For malware family, YARA, or actor queries, also run:
+Malware family / YARA / actor — also:
 
 ```bash
 research-cli malpedia search "QUERY"
 ```
 
-Merge the JSON. Then scrape/read specific URLs or paper IDs if needed. For Reddit, search then `reddit thread` on the best permalinks; `reddit subreddit` to browse a community. For Sploitus: `search` then `exploit` on an id for the full PoC (CVSS, EPSS, entry point, tags, related); `cve` / `product` / `latest` / `home` for the HTML hubs; `autocomplete` for typeahead. Pass `--source` on search when you need PoC bodies in the hit list; `--type tools` searches hacktools. For Exploit-DB: `search` then `exploit` / `raw` for the OffSec PoC; `download` writes `/download/{id}` to disk (exploit, paper PDF, shellcode, or attached app); `latest` is the homepage table; `ghdb` / `dork` for Google dorks; `papers` / `paper` and `shellcodes` / `shellcode` for those databases; `authors` typeahead; `stats` for counts. Pass `--output` as a file or directory. For Malpedia (guest, no key): `search` then `family` (full metadata including `uuid`, `library_entries`, `urls`) and `yara` on a family id (`win.emotet`); `bib --family` for the library BibTeX; `references --url` on a family URL to get linked actors (the details-page attribution); `actor` for an actor id. `yara --zip` writes the family rule zip. `yara-list` indexes guest rules; `yara-dump --tlp white` / `--auto` writes the bulk `.yar` (or `--zip`); `yara-after YYYY-MM-DD` is the incremental JSON. `families` / `actors` list ids; `--full` dumps every record (multi-MB). `misp` is the galaxy cluster (~4MB). `bib` without flags is the full library (~6.7MB). Sample zip endpoints are invite-only and not on the CLI. For bulk dumps use `--output` and `--timeout 180`.
-
-**bgpt** papers (optional `BGPT_API_KEY`). **brave** `llm-context` is page chunks (`BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`); `search` is titles/URLs. **exa** semantic search (`EXA_API_KEY`). **firecrawl** web search + paper index (`FIRECRAWL_API_KEY`). **reddit** posts + comments (`REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET`). **sploitus** exploit/hacktool index (no key). **exploitdb** OffSec Exploit Database (no key). **malpedia** malware families/actors/YARA/bib/MISP (no key; guest). **x** is the logged-in X web GraphQL client (`X_AUTH_TOKEN` + `X_CT0` from the browser `auth_token` and `ct0` cookies). Guest search does not work. If those cookies are missing, skip `x` rather than blocking the other providers. After `x search`, `x thread` on a tweet id or `https://x.com/{user}/status/{id}` for the conversation. `--product latest|top|people|media` (default latest). For news or “what’s going on”, pass `--product top`. `--cursor` pages. `--compact` emits minified JSON; `--fields id,url,text,user,likes` keeps only those result keys (valid JSON, smaller for agents). The CLI generates `x-client-transaction-id` from the homepage; do not paste that header yourself. Dead cookies exit 2 and say cookies expired.
+Merge the JSON, then use **Commands** to follow a hit (scrape a URL, open a thread, read a paper id, dump a PoC). Do not stop at titles if the user needs the page, comments, or exploit body.
 
 ## Commands
 
+Use these exact invocations. Flags listed here are the ones that exist. Values in `a|b` are the only allowed choices.
+
+### help
+
+Setup text (JSON `body`). No API key.
+
+```bash
+research-cli help install
+research-cli help keys
+```
+
+`research-cli help` lists topics. `installation` is an alias of `install`.
+
+### bgpt
+
+Scientific papers (optional `BGPT_API_KEY`). One op: `search`. `--num-results` default 10. `--days-back` optional int. `--output-format` default `evidence`.
+
 ```bash
 research-cli bgpt search "CRISPR delivery neurons" --num-results 5
-research-cli brave search "rust async runtime" --count 10 --freshness pw
+```
+
+### brave
+
+Web. Needs `BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`.
+
+- `llm-context` — ranked **page chunks** (use this on the parallel search). `--count` default 20.
+- `search` — titles/URLs/snippets only. `--count` default 10. `--offset` pages.
+
+Shared: `--country`. `--freshness` is `pd` (day), `pw` (week), `pm` (month), `py` (year), or `YYYY-MM-DDtoYYYY-MM-DD`.
+
+```bash
 research-cli brave llm-context "best practices for RAG" --count 20
+research-cli brave search "rust async runtime" --count 10 --freshness pw
+```
+
+### exa
+
+Semantic web. Needs `EXA_API_KEY`.
+
+- `search` — hits. `--num-results` default 10. `--include-domains` / `--exclude-domains` comma lists. `--category` (e.g. `research paper`). `--start-published` / `--end-published`. `--highlights` and `--text` pull snippets/body with the search.
+- `contents` — fetch one URL’s text.
+
+```bash
 research-cli exa search "LLM evaluations" --include-domains arxiv.org --highlights
 research-cli exa contents https://example.com
-research-cli firecrawl scrape https://example.com --live
+```
+
+### firecrawl
+
+Scrape + web search + paper index. Needs `FIRECRAWL_API_KEY`.
+
+- `search` — web hits. `--limit` default 10. `--categories` (use `research` on the parallel search). `--include-domains` / `--exclude-domains`. `--scrape` also fetches markdown for each hit.
+- `scrape` — one URL to markdown. `--live` forces a live fetch (`maxAge=0`). `--formats` default `markdown`. `--max-age` ms. `--no-main-content` keeps chrome.
+- `map` — list URLs under a site. `--search` filters paths. `--limit` default 50.
+- `papers` — research **index** (not BGPT). `search` → `inspect` → `read` / `related`. Paper ids look like `arxiv:1706.03762`.
+  - `papers search` — `--k` default 40, `--authors`, `--categories`, `--from` / `--to` dates.
+  - `papers inspect` — metadata for one id.
+  - `papers read` — `--question` is required. `--k` default 4 passages.
+  - `papers related` — `--intent` is required. `--mode` `similar|citers|references` (default `similar`). `--k` default 40. `--anchors`.
+
+```bash
 research-cli firecrawl search "transformers" --categories research --limit 10
+research-cli firecrawl scrape https://example.com --live
 research-cli firecrawl map https://docs.firecrawl.dev --search webhook --limit 50
 research-cli firecrawl papers search "CRISPR off-target T cells" --k 10
 research-cli firecrawl papers inspect arxiv:1706.03762
 research-cli firecrawl papers read arxiv:1706.03762 --question "what is the architecture?"
 research-cli firecrawl papers related arxiv:1706.03762 --intent "efficient attention" --mode similar
+```
+
+### reddit
+
+Posts and comments. Needs `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`.
+
+- `search` — `--sort` `relevance|hot|top|new|comments` (default `relevance`). `--time` `hour|day|week|month|year|all` (default `all`). `--limit` default 25. `--subreddit` without `r/`.
+- `thread` — post id, `t3_` id, or comments URL. `--sort` `best|top|new|controversial|old|qa` (default `best`). `--limit` default 50. `--depth` comment tree.
+- `subreddit` — name without `r/`. `--sort` `hot|new|top|rising|controversial` (default `hot`). `--time` same window as search (for `top`/`controversial`). `--limit` default 25.
+
+```bash
 research-cli reddit search "CRISPR neurons" --sort top --time week --limit 10
 research-cli reddit search "async rust" --subreddit rust
 research-cli reddit thread abc123 --sort top --limit 50
 research-cli reddit thread https://www.reddit.com/r/python/comments/abc123/title/
 research-cli reddit subreddit rust --sort top --time week --limit 25
+```
+
+### sploitus
+
+Exploit/hacktool index. No key. `search` then `exploit` for the full PoC (CVSS, EPSS, entry, tags, related).
+
+- `search` — `--type` `exploits|tools` (default `exploits`). `--sort` `default|relevance|date|score|cvss`. `--limit` default 10 (server pages 10). `--offset`. `--source` inlines PoC bodies (large).
+- `exploit` — id (`EDB-ID:50592`) or `https://sploitus.com/exploit?id=...`.
+- `cve` — `CVE-YYYY-NNNNN`. `--limit` default 100.
+- `product` — name or `/product/slug`. `--limit` default 50 (pages of 50).
+- `latest` — newest. `--limit` default 50.
+- `home` — trending/popular widgets.
+- `autocomplete` — typeahead.
+
+```bash
 research-cli sploitus search "CVE-2021-44228" --type exploits --sort score --limit 10
 research-cli sploitus search "wordpress rce" --type exploits --sort relevance --source
 research-cli sploitus search "c2" --type tools --sort date
@@ -123,6 +166,22 @@ research-cli sploitus product wordpress --limit 50
 research-cli sploitus latest --limit 25
 research-cli sploitus home
 research-cli sploitus autocomplete log4
+```
+
+### exploitdb
+
+OffSec Exploit Database. No key. `search` then `exploit` / `raw` for the PoC. `download` writes the file (exploit, paper PDF, shellcode, or attached app).
+
+- `search` — `--type` `dos|local|remote|shellcode|papers|webapps|hardware`. `--platform` slug (`java`, `php`, `windows`, …). `--port`. `--cve` `CVE-YYYY-NNNNN` or `YYYY-NNNNN`. `--text` full-text. `--author`. `--tag`. `--verified`. `--hasapp`. `--nomsf`. `--limit` default 15. `--offset`.
+- `latest` — homepage table. `--limit` / `--offset`.
+- `exploit` / `raw` / `download` — EDB id. `download --output` file or directory (default cwd, name from `Content-Disposition`).
+- `papers` / `paper` — papers table vs hub `/docs/{id}`. `papers` takes optional query, `--language`, `--platform`, `--author`, `--limit`/`--offset`.
+- `shellcodes` / `shellcode` — same pattern for `/shellcodes`.
+- `ghdb` — Google dorks. `--category` id `1`–`14` or title. `dork` is one GHDB id.
+- `authors` — name fragment or numeric id.
+- `stats` — counts.
+
+```bash
 research-cli exploitdb search "CVE-2021-44228" --type remote --platform java
 research-cli exploitdb latest
 research-cli exploitdb exploit 50592
@@ -136,6 +195,26 @@ research-cli exploitdb ghdb "inurl:admin" --category 9
 research-cli exploitdb dork 2
 research-cli exploitdb authors leon
 research-cli exploitdb stats
+```
+
+### malpedia
+
+Malware catalog (guest, no key). `search` then `family` / `yara` / `actor`. Sample zip is invite-only and **not** on the CLI. Bulk dumps: `--output` and `--timeout 180`.
+
+- `search` — name fragment (`emotet`, `apt28`).
+- `family` — id `win.emotet` (uuid, library_entries, urls).
+- `actor` — id `apt28`.
+- `yara` — guest TLP white for a family. `--zip` writes the family rule zip; `--output` file or directory.
+- `families` / `actors` — ids; `--limit`; `--full` dumps every record (multi-MB); `--output`.
+- `bib` — full library (~6.7MB) or `--family` / `--actor` (mutually exclusive). `--output` writes `.bib`.
+- `misp` — galaxy cluster (~4MB). `--output`.
+- `references` — URL → family/actor map (~4.7MB). `--url` filters one reference.
+- `yara-list` — guest rule index; `--family` optional.
+- `yara-dump` — **requires** `--tlp white|green|amber` **or** `--auto`. `--zip` for the bundle. `--output`.
+- `yara-after` — `YYYY-MM-DD` incremental JSON. `--output`.
+- `version` — catalog version.
+
+```bash
 research-cli malpedia search emotet
 research-cli malpedia family win.emotet
 research-cli malpedia actor apt28
@@ -153,6 +232,18 @@ research-cli malpedia yara-dump --tlp white --output /tmp --timeout 180
 research-cli malpedia yara-dump --auto --zip --output /tmp --timeout 180
 research-cli malpedia yara-after 2026-01-01
 research-cli malpedia version
+```
+
+### x
+
+Logged-in X web GraphQL. Needs `X_AUTH_TOKEN` and `X_CT0` (browser `auth_token` + `ct0`). Guest search does not work. Dead cookies exit 2. Do not invent `x-client-transaction-id`.
+
+- `search` — `--product` `latest|top|people|media` (default `latest`). For news / “what’s going on”, `--product top`. `--count` default 20. `--cursor` pages. `from:user` operators work in the query.
+- `thread` — tweet id or `https://x.com/{user}/status/{id}` (twitter.com URLs work). `--cursor` pages.
+
+`--compact` minifies JSON (still valid). `--fields` comma list of result keys (`id,url,text,user,likes`, plus `urls`, `media`, `views`, `in_reply_to`, `retweet` when present).
+
+```bash
 research-cli x search "VMProtect LLVM" --product latest --count 20
 research-cli x search "breaking news" --product top --count 20
 research-cli x search "QUERY" --compact --fields id,url,text,user,likes
@@ -160,21 +251,3 @@ research-cli x thread 2069347283918000383
 research-cli x thread https://x.com/user/status/2069347283918000383
 research-cli x thread 2069347283918000383 --compact --fields id,url,text
 ```
-
-`--base-url` overrides the API origin (local fixture servers). Output is JSON on stdout. `--version` prints SemVer.
-
-## Env keys
-
-| Provider | Variables | Required |
-| --- | --- | --- |
-| bgpt | `BGPT_API_KEY` | no (free tier) |
-| brave search | `BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY` | yes |
-| exa | `EXA_API_KEY` | yes |
-| firecrawl | `FIRECRAWL_API_KEY` | yes |
-| reddit | `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` | yes |
-| sploitus | none | no |
-| exploitdb | none | no |
-| malpedia | none | no |
-| x | `X_AUTH_TOKEN` and `X_CT0` | yes |
-
-Missing Brave, Exa, Firecrawl, Reddit, or X keys exit non-zero and name the provider. BGPT, Sploitus, Exploit-DB, and Malpedia HTTP error bodies are printed on failure.

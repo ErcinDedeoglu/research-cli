@@ -26,7 +26,7 @@ After install, `research-cli` is the same entry as `python -m research_cli`. Key
 ## File Map
 
 ```
-src/research_cli/cli.py              → argparse + dispatch
+src/research_cli/cli.py              → argparse + dispatch; `help install` body matches `skills/research-cli/INSTALL.md`; `help keys` is the env-key/cookie table
 src/research_cli/update.py           → GitHub Releases self-update (frozen/zipapp)
 src/research_cli/http.py             → HttpRequest/Response, urllib transport; frozen SSL uses certifi or OS CA bundle
 src/research_cli/keys.py             → env keys / MissingKeyError
@@ -42,6 +42,7 @@ src/research_cli/providers/malpedia.py   → guest GET /api/find|get|list (famil
 src/research_cli/providers/x.py          → GraphQL SearchTimeline / TweetDetail (cookie auth + generated x-client-transaction-id); ~1h origin-keyed bootstrap cache under RESEARCH_CLI_CACHE_DIR
 src/research_cli/providers/x_transaction.py → homepage SVG + ondemand.s.js tid generator (stdlib)
 skills/research-cli/SKILL.md         → agent playbook (not under .grok/; copy to kenopahq/skills/research-cli on change)
+skills/research-cli/INSTALL.md       → install without the binary (raw GitHub URL from the skill); keep in lockstep with `help install`
 tests/test_skill.py                  → skill ↔ CLI parser/keys alignment
 tests/test_providers.py              → injectable HTTP: method/path/auth/parse
 tests/test_cli.py                    → --help, missing keys, fixture-server CLI
@@ -103,7 +104,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | Agent needs malware family/YARA | `research-cli malpedia search` then `family` / `yara` / `bib --family` / `references --url` (guest; sample zip not on CLI) |
 | Agent needs X/Twitter posts | `research-cli x search` then `x thread` (`X_AUTH_TOKEN` + `X_CT0`; never commit cookies) |
 | CVE/exploit/PoC also | Run sploitus **and** exploitdb (EDB is the OffSec primary; Sploitus is an index) |
-| Add/change a CLI command or flag | Update provider + `cli.py` + skill examples + `tests/test_skill.py` in the same change, then copy `skills/research-cli/SKILL.md` to `/Users/ercin/git/github/kenopahq/skills/research-cli/` |
+| Add/change a CLI command or flag | Update provider + `cli.py` + skill **Commands** (when-to-use, flags/defaults, a parseable example) + `tests/test_skill.py` in the same change, then copy `skills/research-cli/SKILL.md` to `/Users/ercin/git/github/kenopahq/skills/research-cli/` |
 | Skill `version:` vs `research-cli --version` | Must match. Skill older → replace file from `raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md`. Binary older → `--self-update` |
 | Add a provider HTTP path | Injectable `transport`; assert method, host/path, auth header, parsed fields |
 | Skill vs `--help` disagree | Code and skill both wrong until `test_skill` is green |
@@ -115,7 +116,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 ## Boundaries
 
 ### Always
-- Keep `skills/research-cli/SKILL.md` aligned with `build_parser()` and `keys.py`
+- Keep `skills/research-cli/SKILL.md` aligned with `build_parser()` and `keys.py`. Install steps live in `skills/research-cli/INSTALL.md` (skill links the raw GitHub URL — agents with no binary) and `research-cli help install` (same body). Key setup lives in `research-cli help keys`.
 - Run `PYTHONPATH=src python -m unittest discover -s tests -v` after CLI/skill changes
 - JSON on stdout, errors on stderr; missing Brave/Exa/Firecrawl/Reddit/X keys exit 2 and name the provider; Sploitus, Exploit-DB, and Malpedia catalog/YARA need no key; never commit `X_AUTH_TOKEN` / `X_CT0`
 - Conventional commits on `main`; leave `__version__` to the release workflow
@@ -142,6 +143,8 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | `--base-url` | Override API origin (fixture tests), not a vendor path |
 | `--live` | Firecrawl scrape `maxAge=0` |
 | `--self-update` | Foreground GitHub latest-release replace (always download matching asset) |
+| `help install` | Same body as `skills/research-cli/INSTALL.md`; skill points at the raw GitHub URL so a missing binary is not a deadlock |
+| `help keys` | Provider env-key/cookie file, key table, missing-key behavior (not in the skill body) |
 | Background update | After each invocation (including `--version`/`--help`/parse errors), frozen/zipapp spawn detached `--self-update` (waits for parent exit; does not block stdout). Spawn sets `PYINSTALLER_RESET_ENVIRONMENT=1` so onefile children unpack independently (PyInstaller ≥ 6.9). Background skips the asset download when `/releases/latest` is not newer than the running version; explicit `--self-update` still force-replaces. `--self-update` itself does not respawn. Failures append to `~/.cache/research-cli/update.log` |
 | `RESEARCH_CLI_NO_UPDATE` | Disables the post-command spawn; `--self-update` still runs |
 | llm-context | Brave `GET /res/v1/llm/context` — page chunks, not titles-only |

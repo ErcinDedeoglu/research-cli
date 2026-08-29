@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from research_cli import __version__  # noqa: E402
-from research_cli.cli import build_parser  # noqa: E402
+from research_cli.cli import EPILOG, HELP_TOPICS, INSTALL_DOC_URL, build_parser  # noqa: E402
 from research_cli.keys import (  # noqa: E402
     optional_bgpt_key,
     require_brave_key,
@@ -22,6 +22,7 @@ from research_cli.keys import (  # noqa: E402
 )
 
 SKILL = ROOT / "skills" / "research-cli" / "SKILL.md"
+INSTALL = ROOT / "skills" / "research-cli" / "INSTALL.md"
 AGENTS = ROOT / "AGENTS.md"
 ENV_EXAMPLE = ROOT / ".env.example"
 
@@ -56,6 +57,16 @@ def _example_lines(text: str) -> list[str]:
                 continue
             if tokens and tokens[0] in {"research-cli", "python"}:
                 lines.append(line)
+    return lines
+
+
+def _epilog_example_lines() -> list[str]:
+    lines: list[str] = []
+    for raw in EPILOG.splitlines():
+        line = raw.strip()
+        if not line.startswith("research-cli "):
+            continue
+        lines.append(line)
     return lines
 
 
@@ -133,10 +144,12 @@ class SkillFileTests(unittest.TestCase):
         self.assertIn("parallel", desc)
         self.assertIn("every provider", self.text.lower())
         self.assertIn("version guard", self.text.lower())
-        self.assertIn("install if missing", self.text.lower())
-        self.assertIn("releases/latest/download", self.text)
-        self.assertIn("command -v research-cli", self.text)
-        self.assertIn("research-cli-Darwin-arm64", self.text)
+        self.assertIn("help install", self.text.lower())
+        self.assertIn(INSTALL_DOC_URL, self.text)
+        self.assertIn("INSTALL.md", self.text)
+        self.assertNotIn("releases/latest/download", self.text)
+        self.assertNotIn("command -v research-cli", self.text)
+        self.assertNotIn("research-cli-Darwin-arm64", self.text)
         self.assertNotIn("pip install", self.text)
         self.assertNotIn("python -m research_cli", self.text)
         self.assertNotIn("zipapp", self.text.lower())
@@ -144,30 +157,54 @@ class SkillFileTests(unittest.TestCase):
         self.assertIn("research-cli", body)
         self.assertTrue("mcp" in body and "do not" in body)
 
+    def test_install_doc_matches_help_install_topic(self) -> None:
+        self.assertTrue(INSTALL.is_file(), f"missing install doc: {INSTALL}")
+        doc = INSTALL.read_text(encoding="utf-8").strip()
+        topic = HELP_TOPICS["install"].strip()
+        self.assertEqual(
+            doc,
+            topic,
+            "skills/research-cli/INSTALL.md must match cli HELP_TOPICS['install']",
+        )
+        self.assertIn("research-cli-Darwin-arm64", doc)
+        self.assertIn("releases/latest/download", doc)
+        self.assertIn("command -v research-cli", doc)
+        self.assertTrue(
+            INSTALL_DOC_URL.endswith("/skills/research-cli/INSTALL.md"),
+            INSTALL_DOC_URL,
+        )
+
     def test_examples_parse_on_the_real_parser(self) -> None:
-        lines = _example_lines(self.text)
-        self.assertGreaterEqual(len(lines), len(_leaf_paths(self.parser)))
-        covered: set[tuple[str, ...]] = set()
-        for line in lines:
+        skill_lines = _example_lines(self.text)
+        self.assertGreaterEqual(len(skill_lines), 7)
+        skill_covered: set[tuple[str, ...]] = set()
+        for line in skill_lines:
             argv = _example_argv(line)
             try:
                 path = _argv_command_path(argv, self.parser)
             except SystemExit as exc:
                 self.fail(f"skill example does not parse: {line}\n{exc}")
             self.assertTrue(path, f"example did not select a command: {line}")
-            covered.add(path)
-        missing = _leaf_paths(self.parser) - covered
-        self.assertFalse(
-            missing,
-            "SKILL.md is missing an example for CLI operation(s): "
-            + ", ".join(" ".join(path) for path in sorted(missing)),
-        )
-        extra = covered - _leaf_paths(self.parser)
+            skill_covered.add(path)
+        extra = skill_covered - _leaf_paths(self.parser)
         self.assertFalse(
             extra,
             "SKILL.md examples name operations the CLI does not have: "
             + ", ".join(" ".join(path) for path in sorted(extra)),
         )
+        missing_skill = _leaf_paths(self.parser) - skill_covered
+        self.assertFalse(
+            missing_skill,
+            "SKILL.md Commands is missing an example for CLI operation(s): "
+            + ", ".join(" ".join(path) for path in sorted(missing_skill)),
+        )
+        for line in _epilog_example_lines():
+            argv = _example_argv(line)
+            try:
+                path = _argv_command_path(argv, self.parser)
+            except SystemExit as exc:
+                self.fail(f"--help epilog example does not parse: {line}\n{exc}")
+            self.assertTrue(path, f"epilog example did not select a command: {line}")
 
     def test_flags_named_in_skill_exist_on_cli(self) -> None:
         mentioned = set(re.findall(r"(?<![`\w])(--[a-z][a-z0-9-]*)", self.text))
@@ -179,21 +216,22 @@ class SkillFileTests(unittest.TestCase):
             f"SKILL.md documents flags the CLI does not accept: {sorted(unknown)}",
         )
 
-    def test_env_keys_match_shipped_key_module(self) -> None:
+    def test_env_keys_documented_in_help_keys_topic(self) -> None:
         self.assertTrue(callable(optional_bgpt_key))
         self.assertTrue(callable(require_brave_key))
         self.assertTrue(callable(require_exa_key))
         self.assertTrue(callable(require_firecrawl_key))
         self.assertTrue(callable(require_reddit_credentials))
         self.assertTrue(callable(require_x_credentials))
+        keys_topic = HELP_TOPICS["keys"]
+        self.assertIn(".config/research-cli/env", keys_topic)
         for name in ENV_NAMES:
             self.assertIn(
-                f"`{name}`",
-                self.text,
-                f"SKILL.md must document env var {name} (from keys.py)",
+                name,
+                keys_topic,
+                f"help keys topic must document env var {name} (from keys.py)",
             )
-        self.assertIn("brave search", self.text.lower())
-        self.assertIn(".config/research-cli/env", self.text)
+        self.assertIn("help keys", self.text.lower())
         example = ENV_EXAMPLE.read_text(encoding="utf-8")
         for name in (
             "BRAVE_API_KEY",

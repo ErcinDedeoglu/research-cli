@@ -14,7 +14,8 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from research_cli import __version__  # noqa: E402
-from research_cli.cli import main  # noqa: E402
+from research_cli.cli import _csv, _dispatch, _origin, main, run  # noqa: E402
+from research_cli.errors import UpdateError  # noqa: E402
 
 from fixtures import (  # noqa: E402
     BGPT_TITLE,
@@ -114,12 +115,170 @@ class HelpTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn(__version__, proc.stdout)
 
+    def test_help_topics_inprocess_and_run_module(self) -> None:
+        environ = {"RESEARCH_CLI_NO_UPDATE": "1"}
+        listed = io.StringIO()
+        self.assertEqual(
+            main(["help"], environ=environ, stdout=listed, spawn_update=lambda _e: None),
+            0,
+        )
+        self.assertIn("install", json.loads(listed.getvalue())["topics"])
+        install = io.StringIO()
+        self.assertEqual(
+            main(
+                ["help", "installation"],
+                environ=environ,
+                stdout=install,
+                spawn_update=lambda _e: None,
+            ),
+            0,
+        )
+        self.assertEqual(json.loads(install.getvalue())["topic"], "install")
+        keys = io.StringIO()
+        self.assertEqual(
+            main(["help", "keys"], environ=environ, stdout=keys, spawn_update=lambda _e: None),
+            0,
+        )
+        self.assertEqual(json.loads(keys.getvalue())["topic"], "keys")
+        err = io.StringIO()
+        self.assertEqual(
+            main(
+                ["help", "nope"],
+                environ=environ,
+                stdout=io.StringIO(),
+                stderr=err,
+                spawn_update=lambda _e: None,
+            ),
+            1,
+        )
+        self.assertIn("install", err.getvalue().lower())
+
+    def test_run_and_cli_dunder_main_exit(self) -> None:
+        from unittest.mock import patch
+        import runpy
+
+        with patch("research_cli.cli.main", return_value=4):
+            with self.assertRaises(SystemExit) as ctx:
+                run()
+            self.assertEqual(ctx.exception.code, 4)
+        with patch("research_cli.cli.main", return_value=0), patch.object(
+            sys, "argv", ["research-cli"]
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                runpy.run_module("research_cli", run_name="__main__")
+            self.assertEqual(ctx.exception.code, 0)
+        with patch("research_cli.cli.main", return_value=0), patch.object(
+            sys, "argv", ["research-cli"]
+        ):
+            with self.assertRaises(SystemExit):
+                runpy.run_module("research_cli.cli", run_name="__main__")
+
+    def test_self_update_error_and_flush_failure(self) -> None:
+        from unittest.mock import patch
+
+        err = io.StringIO()
+
+        def boom(**_kwargs):
+            raise UpdateError("nope")
+
+        with patch("research_cli.cli.run_self_update", boom):
+            code = main(
+                ["--self-update"],
+                environ={"RESEARCH_CLI_NO_UPDATE": "1"},
+                stdout=io.StringIO(),
+                stderr=err,
+                spawn_update=lambda _e: None,
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("nope", err.getvalue())
+
+        class Broken(io.StringIO):
+            def flush(self) -> None:
+                raise OSError("flush-fail")
+
+        code = main(
+            ["help"],
+            environ={"RESEARCH_CLI_NO_UPDATE": "1"},
+            stdout=Broken(),
+            spawn_update=lambda _e: None,
+        )
+        self.assertEqual(code, 0)
+
+    def test_csv_origin_and_unknown_dispatch(self) -> None:
+        import argparse
+
+        self.assertIsNone(_csv(None))
+        self.assertIsNone(_csv(" , , "))
+        self.assertEqual(_csv("a, b"), ["a", "b"])
+        args = argparse.Namespace()
+        self.assertEqual(
+            _origin(args, {"RESEARCH_CLI_BASE_URL": "http://fixture"}, "https://x.com"),
+            "http://fixture",
+        )
+        self.assertEqual(_origin(args, {}, "https://x.com"), "https://x.com")
+        with self.assertRaises(ValueError):
+            _dispatch(argparse.Namespace(provider="nope"), {}, None)
+        with self.assertRaises(ValueError):
+            _dispatch(argparse.Namespace(provider="x", operation="likes"), {"X_AUTH_TOKEN": "a", "X_CT0": "b"}, None)
+
     def test_self_update_source_is_json(self) -> None:
         proc = _run_module("--self-update")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["status"], "unsupported")
         self.assertIn("pip install", payload["hint"])
+
+    def test_help_install_prints_release_assets(self) -> None:
+        listed = _run_module("help")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        index = json.loads(listed.stdout)
+        self.assertEqual(index["provider"], "help")
+        self.assertIn("install", index["topics"])
+        self.assertIn("install", index["hint"])
+        proc = _run_module("help", "install")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["provider"], "help")
+        self.assertEqual(payload["topic"], "install")
+        self.assertIn("INSTALL.md", payload.get("url", ""))
+        body = payload["body"]
+        self.assertIn("releases/latest/download", body)
+        self.assertIn("command -v research-cli", body)
+        self.assertIn("research-cli-Darwin-arm64", body)
+        self.assertIn("research-cli-Linux-x86_64", body)
+        self.assertIn("research-cli-Linux-aarch64", body)
+        self.assertIn("research-cli-Windows-x86_64.exe", body)
+        self.assertIn("research-cli.pyz", body)
+        alias = _run_module("help", "installation")
+        self.assertEqual(alias.returncode, 0, alias.stderr)
+        self.assertEqual(json.loads(alias.stdout)["body"], body)
+        bad = _run_module("help", "nope")
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("install", bad.stderr.lower())
+
+    def test_help_keys_prints_env_key_table(self) -> None:
+        listed = _run_module("help")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertIn("keys", json.loads(listed.stdout)["topics"])
+        proc = _run_module("help", "keys")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["provider"], "help")
+        self.assertEqual(payload["topic"], "keys")
+        body = payload["body"]
+        self.assertIn(".config/research-cli/env", body)
+        for name in (
+            "BGPT_API_KEY",
+            "BRAVE_API_KEY",
+            "BRAVE_SEARCH_API_KEY",
+            "EXA_API_KEY",
+            "FIRECRAWL_API_KEY",
+            "REDDIT_CLIENT_ID",
+            "REDDIT_CLIENT_SECRET",
+            "X_AUTH_TOKEN",
+            "X_CT0",
+        ):
+            self.assertIn(name, body)
 
 
 class MissingKeyTests(unittest.TestCase):
@@ -308,6 +467,172 @@ class FixtureServerCliTests(unittest.TestCase):
             proc = self._cli(*args)
             self.assertEqual(proc.returncode, 0, proc.stderr + str(args))
             self.assertIn(needle, proc.stdout)
+
+    def test_inprocess_dispatch_covers_cli_branches(self) -> None:
+        environ = dict(self.env)
+        environ["RESEARCH_CLI_BASE_URL"] = self.base
+        environ["RESEARCH_CLI_NO_UPDATE"] = "1"
+        extra = [
+            (["bgpt", "search", "CRISPR", "--days-back", "7", "--num-results", "3"], BGPT_TITLE),
+            (["brave", "search", "rust", "--country", "US", "--offset", "0"], BRAVE_URL),
+            (["brave", "llm-context", "RAG"], BRAVE_LLM_TEXT),
+            (
+                [
+                    "exa",
+                    "search",
+                    "llm",
+                    "--include-domains",
+                    "arxiv.org",
+                    "--exclude-domains",
+                    "spam.example",
+                    "--category",
+                    "research paper",
+                    "--start-published",
+                    "2020-01-01",
+                    "--end-published",
+                    "2026-01-01",
+                    "--highlights",
+                    "--text",
+                ],
+                EXA_SEARCH_URL,
+            ),
+            (["exa", "contents", "https://exa.example/page"], EXA_CONTENTS_TEXT),
+            (
+                [
+                    "firecrawl",
+                    "scrape",
+                    "https://firecrawl.example/page",
+                    "--live",
+                    "--no-main-content",
+                    "--formats",
+                    "markdown",
+                    "--max-age",
+                    "0",
+                ],
+                FIRECRAWL_SCRAPE_MD,
+            ),
+            (
+                [
+                    "firecrawl",
+                    "search",
+                    "scraping",
+                    "--categories",
+                    "research",
+                    "--include-domains",
+                    "example.com",
+                    "--scrape",
+                ],
+                FIRECRAWL_SEARCH_URL,
+            ),
+            (["firecrawl", "map", "https://docs.firecrawl.dev", "--search", "webhook"], FIRECRAWL_MAP_URL),
+            (
+                [
+                    "firecrawl",
+                    "papers",
+                    "search",
+                    "diffusion",
+                    "--k",
+                    "5",
+                    "--from",
+                    "2020-01-01",
+                    "--to",
+                    "2026-01-01",
+                ],
+                PAPER_TITLE,
+            ),
+            (["firecrawl", "papers", "inspect", "arxiv:2105.05233"], PAPER_TITLE),
+            (
+                ["firecrawl", "papers", "read", "arxiv:2105.05233", "--question", "architecture"],
+                PAPER_PASSAGE,
+            ),
+            (
+                [
+                    "firecrawl",
+                    "papers",
+                    "related",
+                    "arxiv:2105.05233",
+                    "--intent",
+                    "attention",
+                    "--anchors",
+                    "a,b",
+                ],
+                PAPERS_RELATED_TITLE,
+            ),
+            (["reddit", "search", "python", "--subreddit", "python"], REDDIT_TITLE),
+            (["reddit", "thread", "abc123", "--depth", "2"], REDDIT_COMMENT_BODY),
+            (["reddit", "subreddit", "python"], REDDIT_TITLE),
+            (["sploitus", "search", "log4j", "--source", "--type", "tools"], SPLOITUS_TITLE),
+            (["sploitus", "exploit", "EDB-ID:50592"], SPLOITUS_TITLE),
+            (["sploitus", "cve", "CVE-2021-44228"], "Fixture CVE description"),
+            (["sploitus", "product", "wordpress"], "CVE-2026-60137"),
+            (["sploitus", "latest"], "Fixture latest exploit"),
+            (["sploitus", "home"], "CVE-2025-55182"),
+            (["sploitus", "autocomplete", "log4"], "log4j"),
+            (
+                [
+                    "exploitdb",
+                    "search",
+                    "log4j",
+                    "--type",
+                    "remote",
+                    "--verified",
+                    "--hasapp",
+                    "--nomsf",
+                    "--cve",
+                    "CVE-2021-44228",
+                    "--tag",
+                    "sqli",
+                    "--text",
+                    "payload",
+                    "--author",
+                    "1",
+                ],
+                EDB_TITLE,
+            ),
+            (["exploitdb", "latest"], EDB_TITLE),
+            (["exploitdb", "exploit", "50592"], EDB_TITLE),
+            (["exploitdb", "raw", "50592"], EDB_SOURCE.splitlines()[0]),
+            (["exploitdb", "papers", "polkit", "--language", "english"], EDB_PAPER_TITLE),
+            (["exploitdb", "paper", "50981"], EDB_PAPER_TITLE),
+            (["exploitdb", "shellcodes", "calc"], EDB_SHELLCODE_TITLE),
+            (["exploitdb", "shellcode", "52599"], EDB_SHELLCODE_TITLE),
+            (["exploitdb", "ghdb", "ganglia", "--category", "Files Containing Passwords"], "Ganglia"),
+            (["exploitdb", "dork", "2"], "Ganglia Cluster Reports"),
+            (["exploitdb", "authors", "leon"], "leonjza"),
+            (["exploitdb", "stats"], "46664"),
+            (["malpedia", "search", "emotet"], MALPEDIA_FAMILY_ID),
+            (["malpedia", "family", "win.emotet"], "Emotet"),
+            (["malpedia", "actor", "apt28"], "APT28"),
+            (["malpedia", "yara", "win.emotet"], MALPEDIA_YARA_NAME),
+            (["malpedia", "families", "--full", "--limit", "2"], "Emotet"),
+            (["malpedia", "actors", "--full"], "APT28"),
+            (["malpedia", "bib", "--actor", "goffee"], "kupreev"),
+            (["malpedia", "misp"], "Malpedia"),
+            (["malpedia", "references", "--url", MALPEDIA_REF_URL], "GOFFEE"),
+            (["malpedia", "yara-list", "--family", "win.emotet"], MALPEDIA_YARA_NAME),
+            (["malpedia", "yara-after", "2026-01-01"], MALPEDIA_YARA_NAME),
+            (["malpedia", "version"], "26109"),
+            (["x", "search", "q", "--compact", "--fields", "id,url,text"], X_TEXT),
+            (["x", "thread", X_TWEET_ID], X_TEXT),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            extra.append((["exploitdb", "download", "50592", "--output", tmp], "50592"))
+            extra.append((["malpedia", "yara", "win.emotet", "--zip", "--output", tmp], "path"))
+            extra.append((["malpedia", "yara-dump", "--tlp", "white", "--output", tmp], "path"))
+            extra.append((["malpedia", "yara-dump", "--auto", "--zip", "--output", tmp], "path"))
+            extra.append((["malpedia", "families", "--output", tmp], "path"))
+            extra.append((["malpedia", "bib", "--family", "win.emotet", "--output", tmp], "path"))
+            for args, needle in extra:
+                out, err = io.StringIO(), io.StringIO()
+                code = main(
+                    list(args),
+                    environ=environ,
+                    stdout=out,
+                    stderr=err,
+                    spawn_update=lambda _e: None,
+                )
+                self.assertEqual(code, 0, err.getvalue() + str(args))
+                self.assertIn(needle, out.getvalue())
 
     def test_x_help_and_invalid_product(self) -> None:
         help_proc = self._cli("x", "--help")
