@@ -99,6 +99,8 @@ examples:
   research-cli malpedia yara-after 2026-01-01
   research-cli malpedia version
   research-cli x search "VMProtect LLVM" --product latest --count 20
+  research-cli x search "breaking news" --product top --count 20
+  research-cli x search "QUERY" --compact --fields id,url,text,user,likes
   research-cli x thread 2069347283918000383
   research-cli x thread https://x.com/user/status/2069347283918000383
 """
@@ -670,6 +672,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Timeline tab (default latest)",
     )
     x_search.add_argument("--cursor", help="Bottom cursor from a previous page")
+    x_search.add_argument(
+        "--compact",
+        action="store_true",
+        help="Minified JSON (single line; still valid JSON)",
+    )
+    x_search.add_argument(
+        "--fields",
+        help="Comma-separated result keys (id,url,text,user,likes,…)",
+    )
     x_thread = x_sub.add_parser(
         "thread",
         help="GraphQL TweetDetail for a tweet id or status URL",
@@ -679,6 +690,15 @@ def build_parser() -> argparse.ArgumentParser:
         "target", help="Tweet id or https://x.com/user/status/{id}"
     )
     x_thread.add_argument("--cursor", help="Bottom cursor from a previous page")
+    x_thread.add_argument(
+        "--compact",
+        action="store_true",
+        help="Minified JSON (single line; still valid JSON)",
+    )
+    x_thread.add_argument(
+        "--fields",
+        help="Comma-separated tweet/reply keys (id,url,text,user,likes,…)",
+    )
     return parser
 
 
@@ -694,8 +714,13 @@ def _timeout(args: argparse.Namespace) -> float:
     return float(getattr(args, "timeout", 60.0))
 
 
-def _emit(payload: dict[str, Any], stdout: TextIO) -> None:
-    json.dump(payload, stdout, indent=2, ensure_ascii=False)
+def _emit(
+    payload: dict[str, Any], stdout: TextIO, *, compact: bool = False
+) -> None:
+    if compact:
+        json.dump(payload, stdout, ensure_ascii=False, separators=(",", ":"))
+    else:
+        json.dump(payload, stdout, indent=2, ensure_ascii=False)
     stdout.write("\n")
 
 
@@ -1112,6 +1137,7 @@ def _dispatch_x(
 ) -> dict[str, Any]:
     auth_token, ct0 = require_x_credentials(environ)
     origin = _origin(args, environ, x.DEFAULT_ORIGIN)
+    fields = _csv(getattr(args, "fields", None))
     if args.operation == "search":
         return x.search(
             args.query,
@@ -1120,9 +1146,11 @@ def _dispatch_x(
             count=args.count,
             product=args.product,
             cursor=args.cursor,
+            fields=fields,
             origin=origin,
             transport=transport,
             timeout=timeout,
+            environ=environ,
         )
     if args.operation == "thread":
         return x.thread(
@@ -1130,9 +1158,11 @@ def _dispatch_x(
             auth_token=auth_token,
             ct0=ct0,
             cursor=args.cursor,
+            fields=fields,
             origin=origin,
             transport=transport,
             timeout=timeout,
+            environ=environ,
         )
     raise ValueError(f"unknown command: x {args.operation}")
 
@@ -1268,7 +1298,11 @@ def main(
         print(f"error: {exc}", file=stderr)
         code = 1
     else:
-        _emit(result, stdout)
+        _emit(
+            result,
+            stdout,
+            compact=bool(getattr(args, "compact", False)),
+        )
         try:
             stdout.flush()
         except Exception:

@@ -1,9 +1,15 @@
 class MissingKeyError(Exception):
-    def __init__(self, provider: str, env_vars: tuple[str, ...]) -> None:
+    def __init__(
+        self,
+        provider: str,
+        env_vars: tuple[str, ...],
+        *,
+        detail: str | None = None,
+    ) -> None:
         self.provider = provider
         self.env_vars = env_vars
         listed = " or ".join(env_vars)
-        super().__init__(f"missing API key for {provider}; set {listed}")
+        super().__init__(detail or f"missing API key for {provider}; set {listed}")
 
 
 class ProviderHttpError(Exception):

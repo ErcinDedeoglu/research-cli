@@ -482,6 +482,7 @@ def run_self_update(
             install=install,
             version=version,
             timeout=timeout,
+            force=not background,
         )
     finally:
         lock.close()
@@ -494,6 +495,7 @@ def _install_latest(
     install: Install,
     version: str,
     timeout: float,
+    force: bool = True,
 ) -> dict[str, Any]:
     release = fetch_latest_release(
         environ=environ, transport=transport, timeout=timeout
@@ -503,6 +505,14 @@ def _install_latest(
     tag = str(release.get("tag_name") or "")
     if not tag:
         raise UpdateError("github latest release has no tag_name")
+    if not force and not version_is_newer(tag, version):
+        return {
+            "status": "current",
+            "kind": install.kind,
+            "version": version,
+            "tag": tag,
+            "path": str(install.path),
+        }
     name = asset_name(install.kind, install.system, install.machine)
     asset = choose_asset(release, name)
     size = asset.get("size")

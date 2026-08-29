@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from research_cli.errors import ProviderHttpError  # noqa: E402
+from research_cli.errors import MissingKeyError, ProviderHttpError  # noqa: E402
 from research_cli.http import HttpResponse  # noqa: E402
 from research_cli.providers import bgpt, brave, exa, exploitdb, firecrawl, malpedia, reddit, sploitus, x  # noqa: E402
 from research_cli.providers import x_transaction  # noqa: E402
@@ -129,10 +129,20 @@ from fixtures import (  # noqa: E402
     MALPEDIA_YARA_SOURCE,
     MALPEDIA_ZIP,
     X_CURSOR,
+    X_EXPANDED_URL,
     X_HOME_HTML,
+    X_MEDIA_ALT,
+    X_MEDIA_URL,
     X_MAIN_JS,
     X_ONDEMAND_HASH,
     X_ONDEMAND_JS,
+    X_REPLY_ID,
+    X_REPLY_USER,
+    X_RETWEET_RESULT,
+    X_RT_ID,
+    X_RT_TEXT,
+    X_RT_USER,
+    X_TCO,
     X_QUERY_DETAIL,
     X_QUERY_SEARCH,
     X_SEARCH_PAYLOAD,
@@ -140,8 +150,12 @@ from fixtures import (  # noqa: E402
     X_THREAD_PAYLOAD,
     X_TWEET_ID,
     X_TWEET_RESULT,
+    X_VIDEO_URL,
+    X_VIEWS,
     X_USER,
     X_VERIFY_KEY,
+    snapshot_path_counts,
+    start_fixture_server,
 )
 
 
@@ -1176,6 +1190,15 @@ class ProviderClientTests(unittest.TestCase):
         self.assertEqual(out["results"][0]["user"]["username"], X_USER)
         self.assertIn(X_TWEET_ID, out["results"][0]["url"])
         self.assertEqual(out["cursor"], X_CURSOR)
+        hit = out["results"][0]
+        self.assertEqual(hit["urls"][0]["url"], X_TCO)
+        self.assertEqual(hit["urls"][0]["expanded_url"], X_EXPANDED_URL)
+        self.assertEqual(hit["media"][0]["url"], X_MEDIA_URL)
+        self.assertEqual(hit["media"][0]["alt"], X_MEDIA_ALT)
+        self.assertEqual(hit["media"][1]["video_url"], X_VIDEO_URL)
+        self.assertEqual(hit["views"], X_VIEWS)
+        self.assertEqual(hit["in_reply_to"]["id"], X_REPLY_ID)
+        self.assertEqual(hit["in_reply_to"]["username"], X_REPLY_USER)
         features = json.loads(qs["features"][0])
         self.assertEqual(
             set(features),
@@ -1427,6 +1450,194 @@ class ProviderClientTests(unittest.TestCase):
         self.assertEqual(out["tweet"]["text"], X_TEXT)
         self.assertEqual(out["id"], X_TWEET_ID)
         self.assertEqual(out["cursor"], X_CURSOR)
+
+    def test_x_parse_retweet_wrapper_and_fields(self) -> None:
+        parsed = x.parse_search_response(
+            {
+                "data": {
+                    "search_by_raw_query": {
+                        "search_timeline": {
+                            "timeline": {
+                                "instructions": [
+                                    {
+                                        "entries": [
+                                            {
+                                                "content": {
+                                                    "itemContent": {
+                                                        "tweet_results": {
+                                                            "result": X_RETWEET_RESULT
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        )
+        hit = parsed["results"][0]
+        self.assertIn("retweet", hit)
+        self.assertEqual(hit["retweet"]["id"], X_RT_ID)
+        self.assertEqual(hit["retweet"]["text"], X_RT_TEXT)
+        self.assertEqual(hit["retweet"]["user"]["username"], X_RT_USER)
+        slim = x.search(
+            "q",
+            auth_token="auth-fixture",
+            ct0="ct0-fixture",
+            fields=["id", "url", "text"],
+            transport=ScriptedTransport(
+                X_HOME_HTML, X_ONDEMAND_JS, X_MAIN_JS, X_SEARCH_PAYLOAD
+            ),
+        )
+        self.assertEqual(set(slim["results"][0]), {"id", "url", "text"})
+        self.assertEqual(slim["results"][0]["id"], X_TWEET_ID)
+        self.assertNotIn("likes", slim["results"][0])
+
+    def test_x_bootstrap_cache_skips_home_ondemand_main_within_ttl(self) -> None:
+        cache: dict = {}
+        now = [1_000.0]
+
+        def clock() -> float:
+            return now[0]
+
+        transport = ScriptedTransport(
+            X_HOME_HTML,
+            X_ONDEMAND_JS,
+            X_MAIN_JS,
+            X_SEARCH_PAYLOAD,
+            X_SEARCH_PAYLOAD,
+        )
+        first = x.search(
+            "q",
+            auth_token="auth-fixture",
+            ct0="ct0-fixture",
+            transport=transport,
+            cache=cache,
+            clock=clock,
+        )
+        second = x.search(
+            "q",
+            auth_token="auth-fixture",
+            ct0="ct0-fixture",
+            transport=transport,
+            cache=cache,
+            clock=clock,
+        )
+        self.assertEqual(first["results"][0]["id"], X_TWEET_ID)
+        self.assertEqual(second["results"][0]["id"], X_TWEET_ID)
+        self.assertEqual(len(transport.requests), 5)
+        paths = [urlparse(req.url).path for req in transport.requests]
+        self.assertEqual(paths[0], "/home")
+        self.assertEqual(sum(1 for path in paths if path == "/home"), 1)
+        self.assertEqual(sum(1 for path in paths if path.endswith("/SearchTimeline")), 2)
+        self.assertTrue(any("ondemand.s." in req.url for req in transport.requests[:3]))
+        self.assertTrue(any(req.url.endswith("/main.fixturea.js") for req in transport.requests[:3]))
+
+    def test_x_disk_bootstrap_cache_skips_home_ondemand_main_across_calls(self) -> None:
+        server, base = start_fixture_server()
+        try:
+            with tempfile.TemporaryDirectory() as raw:
+                env = {"RESEARCH_CLI_CACHE_DIR": raw}
+                now = [1_000.0]
+                first = x.search(
+                    "q",
+                    auth_token="auth-fixture",
+                    ct0="ct0-fixture",
+                    origin=base,
+                    environ=env,
+                    clock=lambda: now[0],
+                )
+                after_first = snapshot_path_counts(server)
+                cache_path = x.bootstrap_cache_file(base, env)
+                self.assertTrue(cache_path.is_file(), cache_path)
+                second = x.search(
+                    "q",
+                    auth_token="auth-fixture",
+                    ct0="ct0-fixture",
+                    origin=base,
+                    environ=env,
+                    clock=lambda: now[0],
+                )
+                after_second = snapshot_path_counts(server)
+                self.assertEqual(first["results"][0]["id"], X_TWEET_ID)
+                self.assertEqual(second["results"][0]["id"], X_TWEET_ID)
+                self.assertEqual(after_first.get("/home"), 1)
+                self.assertEqual(after_second.get("/home"), 1)
+                self.assertEqual(
+                    sum(n for p, n in after_second.items() if "ondemand.s." in p),
+                    1,
+                )
+                self.assertEqual(
+                    sum(
+                        n
+                        for p, n in after_second.items()
+                        if p.endswith("/main.fixturea.js")
+                    ),
+                    1,
+                )
+                self.assertEqual(
+                    sum(
+                        n
+                        for p, n in after_second.items()
+                        if p.endswith("/SearchTimeline")
+                    ),
+                    2,
+                )
+                now[0] = 1_000.0 + x.BOOTSTRAP_TTL_S
+                expired = x.search(
+                    "q",
+                    auth_token="auth-fixture",
+                    ct0="ct0-fixture",
+                    origin=base,
+                    environ=env,
+                    clock=lambda: now[0],
+                )
+                after_ttl = snapshot_path_counts(server)
+                self.assertEqual(expired["results"][0]["id"], X_TWEET_ID)
+                self.assertEqual(after_ttl.get("/home"), 2)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_x_expired_cookies_raise_missing_key(self) -> None:
+        def send_401(_request):
+            return HttpResponse(
+                status=401,
+                headers={},
+                body=b'{"errors":[{"message":"unauthorized"}]}',
+            )
+
+        with self.assertRaises(MissingKeyError) as ctx:
+            x.search("q", auth_token="dead", ct0="dead", transport=send_401)
+        self.assertEqual(ctx.exception.provider, "x")
+        self.assertIn("cookie", str(ctx.exception).lower())
+        self.assertIn("expired", str(ctx.exception).lower())
+        gql_denied = ScriptedTransport(
+            X_HOME_HTML,
+            X_ONDEMAND_JS,
+            X_MAIN_JS,
+            HttpResponse(403, {}, b'{"errors":[{"code":32}]}'),
+        )
+        with self.assertRaises(MissingKeyError) as gql:
+            x.search(
+                "q",
+                auth_token="dead",
+                ct0="dead",
+                transport=gql_denied,
+            )
+        self.assertEqual(gql.exception.provider, "x")
+        with self.assertRaises(ProviderHttpError) as http404:
+            x.search(
+                "q",
+                auth_token="a",
+                ct0="b",
+                transport=lambda _r: HttpResponse(404, {}, b""),
+            )
+        self.assertEqual(http404.exception.status, 404)
 
 
 if __name__ == "__main__":

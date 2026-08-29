@@ -7,14 +7,20 @@ x-client-transaction-id from homepage SVG + ondemand.s.js.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import os
 import re
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.parse import urlparse
 
-from research_cli.errors import ProviderHttpError
+from research_cli.errors import MissingKeyError, ProviderHttpError
 from research_cli.http import (
     HttpRequest,
     Transport,
@@ -24,11 +30,14 @@ from research_cli.http import (
     with_query,
 )
 from research_cli.providers.x_transaction import (
+    EXTRA_BYTE,
+    KEYWORD,
     ClientTransaction,
     extract_main_script_url,
     extract_ondemand_hash,
     ondemand_url,
 )
+from research_cli.update import cache_dir
 
 DEFAULT_ORIGIN = "https://x.com"
 ASSET_ORIGIN = "https://abs.twimg.com"
@@ -105,6 +114,9 @@ TWEET_FIELD_TOGGLES = {
     "withGrokAnalyze": False,
     "withDisallowedReplyControls": False,
 }
+BOOTSTRAP_TTL_S = 3600.0
+BOOTSTRAP_CACHE_VERSION = 1
+COOKIE_EXPIRED = "x cookies expired; set X_AUTH_TOKEN and X_CT0"
 
 
 @dataclass(frozen=True)
@@ -117,6 +129,125 @@ class GraphQLOp:
 class XClient:
     tx: ClientTransaction
     ops: dict[str, GraphQLOp]
+
+
+def bootstrap_cache_file(
+    origin: str, environ: Mapping[str, str] | None = None
+) -> Path:
+    env = os.environ if environ is None else environ
+    digest = hashlib.sha256(origin.rstrip("/").encode("utf-8")).hexdigest()[:16]
+    return cache_dir(env) / "x-bootstrap" / f"{digest}.json"
+
+
+def _client_to_blob(origin: str, saved_at: float, client: XClient) -> dict[str, Any]:
+    return {
+        "version": BOOTSTRAP_CACHE_VERSION,
+        "origin": origin.rstrip("/"),
+        "saved_at": saved_at,
+        "key_bytes": base64.b64encode(client.tx.key_bytes).decode("ascii"),
+        "animation_key": client.tx.animation_key,
+        "keyword": client.tx.keyword,
+        "extra": client.tx.extra,
+        "ops": {
+            name: {"query_id": op.query_id, "features": dict(op.features)}
+            for name, op in client.ops.items()
+        },
+    }
+
+
+def _client_from_blob(data: Any) -> XClient | None:
+    if not isinstance(data, dict):
+        return None
+    if data.get("version") != BOOTSTRAP_CACHE_VERSION:
+        return None
+    key_b64 = data.get("key_bytes")
+    animation_key = data.get("animation_key")
+    if not isinstance(key_b64, str) or not isinstance(animation_key, str):
+        return None
+    if not key_b64 or not animation_key:
+        return None
+    try:
+        key_bytes = base64.b64decode(key_b64)
+    except (ValueError, TypeError):
+        return None
+    if not key_bytes:
+        return None
+    extra_raw = data.get("extra", EXTRA_BYTE)
+    try:
+        extra = int(extra_raw)
+    except (TypeError, ValueError):
+        return None
+    keyword = data.get("keyword") or KEYWORD
+    if not isinstance(keyword, str):
+        return None
+    ops: dict[str, GraphQLOp] = {}
+    raw_ops = data.get("ops") or {}
+    if not isinstance(raw_ops, dict):
+        return None
+    for name, raw in raw_ops.items():
+        if not isinstance(name, str) or not isinstance(raw, dict):
+            return None
+        query_id = raw.get("query_id")
+        if not isinstance(query_id, str) or not query_id:
+            return None
+        features_raw = raw.get("features") or {}
+        if not isinstance(features_raw, dict):
+            return None
+        features = {str(flag): bool(value) for flag, value in features_raw.items()}
+        ops[name] = GraphQLOp(query_id=query_id, features=features)
+    return XClient(
+        tx=ClientTransaction(
+            key_bytes=key_bytes,
+            animation_key=animation_key,
+            keyword=keyword,
+            extra=extra,
+        ),
+        ops=ops,
+    )
+
+
+def _read_disk_bootstrap(
+    origin: str,
+    environ: Mapping[str, str],
+    now: float,
+) -> XClient | None:
+    path = bootstrap_cache_file(origin, environ)
+    try:
+        raw = path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    if data.get("origin") != origin.rstrip("/"):
+        return None
+    try:
+        saved_at = float(data.get("saved_at"))
+    except (TypeError, ValueError):
+        return None
+    if now - saved_at >= BOOTSTRAP_TTL_S:
+        return None
+    return _client_from_blob(data)
+
+
+def _write_disk_bootstrap(
+    origin: str,
+    environ: Mapping[str, str],
+    now: float,
+    client: XClient,
+) -> None:
+    path = bootstrap_cache_file(origin, environ)
+    blob = _client_to_blob(origin, now, client)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(blob, separators=(",", ":")), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
 
 
 def _cookie_header(auth_token: str, ct0: str) -> str:
@@ -195,11 +326,37 @@ def _execute_text(
     except (URLError, TimeoutError, OSError) as exc:
         raise ProviderHttpError("x", 0, str(exc)) from exc
     text = response.body.decode("utf-8", errors="replace")
+    if response.status in {401, 403}:
+        raise MissingKeyError(
+            "x", ("X_AUTH_TOKEN", "X_CT0"), detail=COOKIE_EXPIRED
+        )
     if response.status >= 400:
         raise ProviderHttpError("x", response.status, text[:500] or "empty body")
     if not text.strip():
         raise ProviderHttpError("x", response.status, "empty response body")
     return text
+
+
+def _raise_if_expired(exc: ProviderHttpError) -> None:
+    if exc.status in {401, 403}:
+        raise MissingKeyError(
+            "x", ("X_AUTH_TOKEN", "X_CT0"), detail=COOKIE_EXPIRED
+        ) from exc
+
+
+def _graphql_json(
+    request: HttpRequest,
+    *,
+    transport: Transport | None,
+    timeout: float,
+) -> Any:
+    try:
+        return execute_json(
+            request, provider="x", transport=transport, timeout=timeout
+        )
+    except ProviderHttpError as exc:
+        _raise_if_expired(exc)
+        raise
 
 
 def build_home_request(
@@ -257,13 +414,13 @@ def _query_id(ops: dict[str, GraphQLOp], name: str) -> str:
     raise ProviderHttpError("x", 0, f"missing GraphQL query id for {name}")
 
 
-def bootstrap(
+def _network_bootstrap(
     *,
     auth_token: str,
     ct0: str,
-    origin: str = DEFAULT_ORIGIN,
-    transport: Transport | None = None,
-    timeout: float = 60.0,
+    origin: str,
+    transport: Transport | None,
+    timeout: float,
 ) -> XClient:
     home = _execute_text(
         build_home_request(auth_token=auth_token, ct0=ct0, origin=origin),
@@ -297,6 +454,49 @@ def bootstrap(
         )
         ops = parse_graphql_ops(main_js)
     return XClient(tx=tx, ops=ops)
+
+
+def bootstrap(
+    *,
+    auth_token: str,
+    ct0: str,
+    origin: str = DEFAULT_ORIGIN,
+    transport: Transport | None = None,
+    timeout: float = 60.0,
+    clock: Callable[[], float] | None = None,
+    cache: dict[str, tuple[float, XClient]] | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> XClient:
+    now = (clock or time.time)()
+    key = origin.rstrip("/")
+    env = os.environ if environ is None else environ
+    if cache is not None:
+        hit = cache.get(key)
+        if hit is not None and now - hit[0] < BOOTSTRAP_TTL_S:
+            return hit[1]
+        client = _network_bootstrap(
+            auth_token=auth_token,
+            ct0=ct0,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+        cache[key] = (now, client)
+        return client
+    if transport is None:
+        disk = _read_disk_bootstrap(key, env, now)
+        if disk is not None:
+            return disk
+    client = _network_bootstrap(
+        auth_token=auth_token,
+        ct0=ct0,
+        origin=origin,
+        transport=transport,
+        timeout=timeout,
+    )
+    if transport is None:
+        _write_disk_bootstrap(key, env, now, client)
+    return client
 
 
 def _product_name(product: str) -> str:
@@ -437,6 +637,128 @@ def _tweet_text(result: dict[str, Any], legacy: dict[str, Any]) -> str | None:
     return text if isinstance(text, str) else None
 
 
+def _expanded_urls(legacy: dict[str, Any]) -> list[dict[str, Any]]:
+    entities = legacy.get("entities")
+    if not isinstance(entities, dict):
+        return []
+    raw = entities.get("urls")
+    if not isinstance(raw, list):
+        return []
+    urls: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        tco = item.get("url")
+        expanded = item.get("expanded_url") or item.get("unwound_url")
+        if not tco and not expanded:
+            continue
+        urls.append(
+            {
+                "url": tco,
+                "expanded_url": expanded,
+                "display_url": item.get("display_url"),
+            }
+        )
+    return urls
+
+
+def _best_video_url(media: dict[str, Any]) -> str | None:
+    info = media.get("video_info")
+    if not isinstance(info, dict):
+        return None
+    variants = info.get("variants")
+    if not isinstance(variants, list):
+        return None
+    best: str | None = None
+    best_br = -1
+    for variant in variants:
+        if not isinstance(variant, dict):
+            continue
+        href = variant.get("url")
+        if not isinstance(href, str) or not href:
+            continue
+        ctype = str(variant.get("content_type") or "")
+        if "mp4" not in ctype and not href.endswith(".mp4"):
+            continue
+        try:
+            bitrate = int(variant.get("bitrate") or 0)
+        except (TypeError, ValueError):
+            bitrate = 0
+        if bitrate >= best_br:
+            best_br = bitrate
+            best = href
+    return best
+
+
+def _media_items(tweet: dict[str, Any], legacy: dict[str, Any]) -> list[dict[str, Any]]:
+    bags: list[Any] = [legacy.get("extended_entities"), legacy.get("entities")]
+    if tweet is not legacy:
+        bags.extend(
+            [
+                (tweet.get("legacy") or {}).get("extended_entities")
+                if isinstance(tweet.get("legacy"), dict)
+                else None,
+                tweet.get("extended_entities"),
+            ]
+        )
+    source: list[Any] | None = None
+    for bag in bags:
+        if isinstance(bag, dict) and isinstance(bag.get("media"), list):
+            source = bag["media"]
+            break
+    if not source:
+        return []
+    items: list[dict[str, Any]] = []
+    for media in source:
+        if not isinstance(media, dict):
+            continue
+        href = media.get("media_url_https") or media.get("media_url")
+        kind = media.get("type")
+        alt = media.get("ext_alt_text") or media.get("alt_text")
+        video = _best_video_url(media)
+        if not href and not video:
+            continue
+        record: dict[str, Any] = {"type": kind, "url": href, "alt": alt}
+        if video:
+            record["video_url"] = video
+        items.append(record)
+    return items
+
+
+def _view_count(tweet: dict[str, Any]) -> int | None:
+    views = tweet.get("views")
+    if not isinstance(views, dict):
+        return None
+    count = views.get("count")
+    if count is None:
+        return None
+    try:
+        return int(count)
+    except (TypeError, ValueError):
+        return None
+
+
+def _in_reply_to(legacy: dict[str, Any]) -> dict[str, Any] | None:
+    status_id = legacy.get("in_reply_to_status_id_str")
+    username = legacy.get("in_reply_to_screen_name")
+    if not status_id and not username:
+        return None
+    return {"id": status_id, "username": username}
+
+
+def _retweet_source(tweet: dict[str, Any], legacy: dict[str, Any]) -> Any:
+    for bag in (tweet, legacy):
+        if not isinstance(bag, dict):
+            continue
+        wrapped = bag.get("retweeted_status_result")
+        if isinstance(wrapped, dict) and "result" in wrapped:
+            return wrapped.get("result")
+        nested = bag.get("retweeted_status")
+        if isinstance(nested, dict):
+            return nested
+    return None
+
+
 def _unwrap_tweet(result: Any) -> dict[str, Any] | None:
     if not isinstance(result, dict):
         return None
@@ -480,6 +802,23 @@ def _tweet_record(result: Any) -> dict[str, Any] | None:
         "bookmarks": legacy.get("bookmark_count"),
         "user": user or None,
     }
+    urls = _expanded_urls(legacy)
+    if urls:
+        record["urls"] = urls
+    media = _media_items(tweet, legacy)
+    if media:
+        record["media"] = media
+    views = _view_count(tweet)
+    if views is not None:
+        record["views"] = views
+    reply = _in_reply_to(legacy)
+    if reply:
+        record["in_reply_to"] = reply
+    retweeted = _retweet_source(tweet, legacy)
+    if retweeted is not None:
+        nested_rt = _tweet_record(retweeted)
+        if nested_rt:
+            record["retweet"] = nested_rt
     quoted = tweet.get("quoted_status_result")
     if isinstance(quoted, dict):
         nested = _tweet_record(quoted.get("result"))
@@ -571,6 +910,33 @@ def parse_timeline(payload: Any) -> tuple[list[dict[str, Any]], dict[str, str]]:
     return tweets, cursors
 
 
+def _project_record(record: Any, fields: list[str]) -> Any:
+    if not isinstance(record, dict) or not fields:
+        return record
+    keep = set(fields)
+    out = {key: value for key, value in record.items() if key in keep}
+    for nested in ("quoted", "retweet"):
+        if nested in out:
+            out[nested] = _project_record(out[nested], fields)
+    return out
+
+
+def project_payload(payload: dict[str, Any], fields: list[str] | None) -> dict[str, Any]:
+    if not fields:
+        return payload
+    names = [item.strip() for item in fields if item and item.strip()]
+    if not names:
+        return payload
+    out = dict(payload)
+    if isinstance(out.get("results"), list):
+        out["results"] = [_project_record(item, names) for item in out["results"]]
+    if isinstance(out.get("tweet"), dict):
+        out["tweet"] = _project_record(out["tweet"], names)
+    if isinstance(out.get("replies"), list):
+        out["replies"] = [_project_record(item, names) for item in out["replies"]]
+    return out
+
+
 def parse_search_response(payload: Any) -> dict[str, Any]:
     tweets, cursors = parse_timeline(payload)
     return {
@@ -606,10 +972,14 @@ def search(
     count: int = 20,
     product: str = "latest",
     cursor: str | None = None,
+    fields: list[str] | None = None,
     origin: str = DEFAULT_ORIGIN,
     transport: Transport | None = None,
     timeout: float = 60.0,
     client: XClient | None = None,
+    clock: Callable[[], float] | None = None,
+    cache: dict[str, tuple[float, XClient]] | None = None,
+    environ: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     needle = (query or "").strip()
     if not needle:
@@ -620,6 +990,9 @@ def search(
         origin=origin,
         transport=transport,
         timeout=timeout,
+        clock=clock,
+        cache=cache,
+        environ=environ,
     )
     op_name = "SearchTimeline"
     query_id = _query_id(session.ops, op_name)
@@ -637,13 +1010,11 @@ def search(
         features=_features_for(session.ops.get(op_name)),
         origin=origin,
     )
-    payload = execute_json(
-        request, provider="x", transport=transport, timeout=timeout
-    )
+    payload = _graphql_json(request, transport=transport, timeout=timeout)
     out = parse_search_response(payload)
     out["query"] = needle
     out["product"] = _product_name(product)
-    return out
+    return project_payload(out, fields)
 
 
 def thread(
@@ -652,10 +1023,14 @@ def thread(
     auth_token: str,
     ct0: str,
     cursor: str | None = None,
+    fields: list[str] | None = None,
     origin: str = DEFAULT_ORIGIN,
     transport: Transport | None = None,
     timeout: float = 60.0,
     client: XClient | None = None,
+    clock: Callable[[], float] | None = None,
+    cache: dict[str, tuple[float, XClient]] | None = None,
+    environ: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     tweet_id = parse_tweet_ref(target)
     session = client or bootstrap(
@@ -664,6 +1039,9 @@ def thread(
         origin=origin,
         transport=transport,
         timeout=timeout,
+        clock=clock,
+        cache=cache,
+        environ=environ,
     )
     op_name = "TweetDetail"
     query_id = _query_id(session.ops, op_name)
@@ -679,7 +1057,5 @@ def thread(
         features=_features_for(session.ops.get(op_name)),
         origin=origin,
     )
-    payload = execute_json(
-        request, provider="x", transport=transport, timeout=timeout
-    )
-    return parse_thread_response(payload, tweet_id)
+    payload = _graphql_json(request, transport=transport, timeout=timeout)
+    return project_payload(parse_thread_response(payload, tweet_id), fields)

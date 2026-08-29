@@ -597,6 +597,17 @@ X_TWEET_ID = "2069347283918000383"
 X_USER = "FixtureUser"
 X_TEXT = "Fixture VMProtect LLVM tweet"
 X_CURSOR = "fixture-cursor"
+X_TCO = "https://t.co/fixture1"
+X_EXPANDED_URL = "https://github.com/openai/example"
+X_MEDIA_URL = "https://pbs.twimg.com/media/fixture.jpg"
+X_MEDIA_ALT = "Fixture photo of a binary"
+X_VIDEO_URL = "https://video.twimg.com/ext_tw_video/fixture.mp4"
+X_VIEWS = 12345
+X_REPLY_ID = "111222333"
+X_REPLY_USER = "VoiceOfTheStar"
+X_RT_ID = "444555666"
+X_RT_TEXT = "original fixture post"
+X_RT_USER = "OrigPoster"
 X_QUERY_SEARCH = "hyPfJYJ_XAtDYoslQc-Rgg"
 X_QUERY_DETAIL = "XMOz5h24KAZ86qKffKTLdQ"
 X_ONDEMAND_HASH = "cafebabe"
@@ -649,6 +660,7 @@ X_TWEET_RESULT = {
             }
         }
     },
+    "views": {"count": str(X_VIEWS), "state": "EnabledWithCount"},
     "legacy": {
         "id_str": X_TWEET_ID,
         "full_text": X_TEXT,
@@ -659,6 +671,87 @@ X_TWEET_RESULT = {
         "reply_count": 0,
         "quote_count": 0,
         "bookmark_count": 3,
+        "in_reply_to_status_id_str": X_REPLY_ID,
+        "in_reply_to_screen_name": X_REPLY_USER,
+        "entities": {
+            "urls": [
+                {
+                    "url": X_TCO,
+                    "expanded_url": X_EXPANDED_URL,
+                    "display_url": "github.com/openai/example",
+                }
+            ]
+        },
+        "extended_entities": {
+            "media": [
+                {
+                    "type": "photo",
+                    "media_url_https": X_MEDIA_URL,
+                    "ext_alt_text": X_MEDIA_ALT,
+                    "url": "https://t.co/media1",
+                },
+                {
+                    "type": "video",
+                    "media_url_https": X_MEDIA_URL,
+                    "ext_alt_text": "Fixture clip",
+                    "video_info": {
+                        "variants": [
+                            {
+                                "content_type": "application/x-mpegURL",
+                                "url": "https://video.twimg.com/ext_tw_video/fixture.m3u8",
+                            },
+                            {
+                                "bitrate": 832000,
+                                "content_type": "video/mp4",
+                                "url": X_VIDEO_URL,
+                            },
+                            {
+                                "bitrate": 256000,
+                                "content_type": "video/mp4",
+                                "url": "https://video.twimg.com/ext_tw_video/low.mp4",
+                            },
+                        ]
+                    },
+                },
+            ]
+        },
+    },
+}
+X_RETWEET_RESULT = {
+    "__typename": "Tweet",
+    "rest_id": "777888999",
+    "core": {
+        "user_results": {
+            "result": {
+                "__typename": "User",
+                "rest_id": "2",
+                "core": {"name": "RT User", "screen_name": "RtUser"},
+            }
+        }
+    },
+    "legacy": {
+        "id_str": "777888999",
+        "full_text": "RT @" + X_RT_USER + ": " + X_RT_TEXT,
+        "created_at": "Tue Jun 23 09:10:13 +0000 2026",
+        "retweeted_status_result": {
+            "result": {
+                "__typename": "Tweet",
+                "rest_id": X_RT_ID,
+                "core": {
+                    "user_results": {
+                        "result": {
+                            "__typename": "User",
+                            "rest_id": "3",
+                            "core": {"name": "Orig", "screen_name": X_RT_USER},
+                        }
+                    }
+                },
+                "legacy": {
+                    "id_str": X_RT_ID,
+                    "full_text": X_RT_TEXT,
+                },
+            }
+        },
     },
 }
 X_SEARCH_PAYLOAD = {
@@ -773,9 +866,21 @@ class FixtureHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: object) -> None:  # noqa: A003
         return
 
+    def _count_path(self, path: str) -> None:
+        counts = getattr(self.server, "path_counts", None)
+        if counts is None:
+            return
+        lock = getattr(self.server, "path_counts_lock", None)
+        if lock is None:
+            counts[path] = counts.get(path, 0) + 1
+            return
+        with lock:
+            counts[path] = counts.get(path, 0) + 1
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
+        self._count_path(path)
         if path.startswith("/api/find/family/"):
             self._send(200, MALPEDIA_FIND_FAMILY)
             return
@@ -998,8 +1103,19 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self._send(200, payload)
 
 
+def snapshot_path_counts(server: ThreadingHTTPServer) -> dict[str, int]:
+    counts = getattr(server, "path_counts", None) or {}
+    lock = getattr(server, "path_counts_lock", None)
+    if lock is None:
+        return dict(counts)
+    with lock:
+        return dict(counts)
+
+
 def start_fixture_server() -> tuple[ThreadingHTTPServer, str]:
     server = ThreadingHTTPServer(("127.0.0.1", 0), FixtureHandler)
+    server.path_counts = {}  # type: ignore[attr-defined]
+    server.path_counts_lock = threading.Lock()  # type: ignore[attr-defined]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     host, port = server.server_address[:2]

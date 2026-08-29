@@ -39,7 +39,7 @@ src/research_cli/providers/reddit.py     → POST /api/v1/access_token, GET /sea
 src/research_cli/providers/sploitus.py   → POST /search; GET /autocomplete; GET /exploit?id=; GET /cve/{id}; GET /product/{slug}[/page/N]; GET /latest[/page/N]; GET /
 src/research_cli/providers/exploitdb.py  → GET /search, GET /, GET /papers, GET /shellcodes, GET /google-hacking-database (XHR JSON); GET /exploits/{id}, /docs/{id}, /shellcodes/{id}, /ghdb/{id}, /raw/{id}, /download/{id}; GET /authors-ajax; GET /api/authorid/{id}
 src/research_cli/providers/malpedia.py   → guest GET /api/find|get|list (family, actor, yara, bib, misp, references, version); yara tlp/auto/after dumps; family yara zip. Sample zip helpers exist in-module, not CLI-wired.
-src/research_cli/providers/x.py          → GraphQL SearchTimeline / TweetDetail (cookie auth + generated x-client-transaction-id)
+src/research_cli/providers/x.py          → GraphQL SearchTimeline / TweetDetail (cookie auth + generated x-client-transaction-id); ~1h origin-keyed bootstrap cache under RESEARCH_CLI_CACHE_DIR
 src/research_cli/providers/x_transaction.py → homepage SVG + ondemand.s.js tid generator (stdlib)
 skills/research-cli/SKILL.md         → agent playbook (not under .grok/; copy to kenopahq/skills/research-cli on change)
 tests/test_skill.py                  → skill ↔ CLI parser/keys alignment
@@ -142,12 +142,12 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | `--base-url` | Override API origin (fixture tests), not a vendor path |
 | `--live` | Firecrawl scrape `maxAge=0` |
 | `--self-update` | Foreground GitHub latest-release replace (always download matching asset) |
-| Background update | After each invocation (including `--version`/`--help`/parse errors), frozen/zipapp spawn detached `--self-update` (waits for parent exit; does not block stdout). Spawn sets `PYINSTALLER_RESET_ENVIRONMENT=1` so onefile children unpack independently (PyInstaller ≥ 6.9). `--self-update` itself does not respawn. Failures append to `~/.cache/research-cli/update.log` |
+| Background update | After each invocation (including `--version`/`--help`/parse errors), frozen/zipapp spawn detached `--self-update` (waits for parent exit; does not block stdout). Spawn sets `PYINSTALLER_RESET_ENVIRONMENT=1` so onefile children unpack independently (PyInstaller ≥ 6.9). Background skips the asset download when `/releases/latest` is not newer than the running version; explicit `--self-update` still force-replaces. `--self-update` itself does not respawn. Failures append to `~/.cache/research-cli/update.log` |
 | `RESEARCH_CLI_NO_UPDATE` | Disables the post-command spawn; `--self-update` still runs |
 | llm-context | Brave `GET /res/v1/llm/context` — page chunks, not titles-only |
 | papers | Firecrawl research index (`/v2/search/research/papers`), not BGPT |
 | sploitus | Guest site: SPA `POST /search` + HTML hubs (`/exploit`, `/cve`, `/product`, `/latest`) |
 | malpedia | Fraunhofer FKIE malware catalog: guest `GET /api/find|get|list|yara|bib|misp|references`; bulk `yara-dump` / `yara-after`; sample zip not on CLI |
 | exploitdb | Guest DataTables: `GET /search` with `X-Requested-With: XMLHttpRequest`; hubs `/exploits/{id}`, `/raw/{id}`, GHDB, papers, shellcodes |
-| x | Logged-in X web GraphQL: `GET /i/api/graphql/{queryId}/SearchTimeline` and `TweetDetail`; cookies `auth_token`+`ct0`; generated `x-client-transaction-id` |
+| x | Logged-in X web GraphQL: `GET /i/api/graphql/{queryId}/SearchTimeline` and `TweetDetail`; cookies `auth_token`+`ct0`; generated `x-client-transaction-id`; homepage+ondemand+main.js cached ~1h under `RESEARCH_CLI_CACHE_DIR` |
 | SemVer | `src/research_cli/__init__.py` `__version__`; skill frontmatter `version:` must match; tags `vMAJOR.MINOR.PATCH`; `python scripts/semver.py next` |

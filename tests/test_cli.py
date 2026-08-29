@@ -41,9 +41,11 @@ from fixtures import (  # noqa: E402
     MALPEDIA_YARA_RAW,
     MALPEDIA_ZIP,
     X_CURSOR,
+    X_ONDEMAND_HASH,
     X_TEXT,
     X_TWEET_ID,
     X_USER,
+    snapshot_path_counts,
     start_fixture_server,
 )
 
@@ -175,6 +177,7 @@ class FixtureServerCliTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.server, cls.base = start_fixture_server()
+        cls._cache = tempfile.TemporaryDirectory()
         cls.env = _clean_env()
         cls.env.update(
             {
@@ -185,6 +188,7 @@ class FixtureServerCliTests(unittest.TestCase):
                 "REDDIT_CLIENT_SECRET": "fixture-reddit-secret",
                 "X_AUTH_TOKEN": "fixture-x-auth",
                 "X_CT0": "fixture-x-ct0",
+                "RESEARCH_CLI_CACHE_DIR": cls._cache.name,
             }
         )
 
@@ -192,6 +196,7 @@ class FixtureServerCliTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.server.shutdown()
         cls.server.server_close()
+        cls._cache.cleanup()
 
     def _cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return _run_module("--base-url", self.base, *args, env=self.env)
@@ -314,12 +319,94 @@ class FixtureServerCliTests(unittest.TestCase):
         self.assertIn("--product", search_help.stdout)
         self.assertIn("--count", search_help.stdout)
         self.assertIn("--cursor", search_help.stdout)
+        self.assertIn("--compact", search_help.stdout)
+        self.assertIn("--fields", search_help.stdout)
         thread_help = self._cli("x", "thread", "--help")
         self.assertEqual(thread_help.returncode, 0, thread_help.stderr)
         self.assertIn("--cursor", thread_help.stdout)
         bad = self._cli("x", "search", "q", "--product", "hot")
         self.assertNotEqual(bad.returncode, 0)
         self.assertIn("product", (bad.stderr + bad.stdout).lower())
+        compact = self._cli(
+            "x",
+            "search",
+            "q",
+            "--compact",
+            "--fields",
+            "id,url,text",
+        )
+        self.assertEqual(compact.returncode, 0, compact.stderr)
+        payload = json.loads(compact.stdout)
+        self.assertEqual(payload["provider"], "x")
+        self.assertEqual(set(payload["results"][0]), {"id", "url", "text"})
+        self.assertEqual(payload["results"][0]["text"], X_TEXT)
+        self.assertEqual(compact.stdout.count("\n"), 1)
+
+    def test_x_expired_cookies_exit_2(self) -> None:
+        def send_401(_request):
+            from research_cli.http import HttpResponse
+
+            return HttpResponse(401, {}, b'{"errors":[{"message":"unauthorized"}]}')
+
+        err = io.StringIO()
+        code = main(
+            ["x", "search", "q"],
+            environ={
+                "X_AUTH_TOKEN": "dead",
+                "X_CT0": "dead",
+                "RESEARCH_CLI_NO_UPDATE": "1",
+            },
+            transport=send_401,
+            stdout=io.StringIO(),
+            stderr=err,
+            spawn_update=lambda _e: None,
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("x", err.getvalue().lower())
+        self.assertIn("cookie", err.getvalue().lower())
+        self.assertIn("expired", err.getvalue().lower())
+
+    def test_x_cli_second_process_skips_bootstrap_http(self) -> None:
+        server, base = start_fixture_server()
+        try:
+            with tempfile.TemporaryDirectory() as raw:
+                env = _clean_env()
+                env.update(
+                    {
+                        "X_AUTH_TOKEN": "fixture-x-auth",
+                        "X_CT0": "fixture-x-ct0",
+                        "RESEARCH_CLI_CACHE_DIR": raw,
+                    }
+                )
+                first = _run_module("--base-url", base, "x", "search", "q", env=env)
+                self.assertEqual(first.returncode, 0, first.stderr)
+                payload = json.loads(first.stdout)
+                self.assertEqual(payload["provider"], "x")
+                self.assertIn(X_TEXT, first.stdout)
+                after_first = snapshot_path_counts(server)
+                second = _run_module("--base-url", base, "x", "search", "q", env=env)
+                self.assertEqual(second.returncode, 0, second.stderr)
+                after_second = snapshot_path_counts(server)
+                ondemand = f"/responsive-web/client-web/ondemand.s.{X_ONDEMAND_HASH}a.js"
+                self.assertEqual(after_first.get("/home"), 1)
+                self.assertEqual(after_second.get("/home"), 1)
+                self.assertEqual(after_first.get(ondemand), 1)
+                self.assertEqual(after_second.get(ondemand), 1)
+                self.assertEqual(after_first.get("/responsive-web/client-web/main.fixturea.js"), 1)
+                self.assertEqual(
+                    after_second.get("/responsive-web/client-web/main.fixturea.js"), 1
+                )
+                gql_first = sum(
+                    n for p, n in after_first.items() if p.endswith("/SearchTimeline")
+                )
+                gql_second = sum(
+                    n for p, n in after_second.items() if p.endswith("/SearchTimeline")
+                )
+                self.assertEqual(gql_first, 1)
+                self.assertEqual(gql_second, 2)
+        finally:
+            server.shutdown()
+            server.server_close()
 
     def test_exploitdb_download_writes_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -216,6 +216,30 @@ class SelfUpdateTests(unittest.TestCase):
         self.assertEqual(install.path.read_bytes(), body)
         self.assertEqual(transport.urls, [LATEST_API, DARWIN_URL])
 
+    def test_background_skips_download_when_tag_matches(self) -> None:
+        install = self._install()
+        body = b"should-not-write"
+        release = _release(
+            "v0.1.0",
+            [_asset("research-cli-Darwin-arm64", DARWIN_URL, body)],
+        )
+        transport = MapTransport(
+            {
+                LATEST_API: _json_response(release),
+                DARWIN_URL: HttpResponse(200, {}, body),
+            }
+        )
+        payload = run_self_update(
+            environ={**self.environ, WAIT_PID_ENV: "0"},
+            transport=transport,
+            install=install,
+            current_version="0.1.0",
+        )
+        self.assertEqual(payload["status"], "current")
+        self.assertEqual(payload["tag"], "v0.1.0")
+        self.assertEqual(install.path.read_bytes(), b"old-binary")
+        self.assertEqual(transport.urls, [LATEST_API])
+
     def test_busy_lock_does_not_hit_network(self) -> None:
         install = self._install()
         ready = self.dir / "lock-ready"
