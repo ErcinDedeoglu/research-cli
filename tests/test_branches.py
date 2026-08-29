@@ -4,6 +4,7 @@ import argparse
 import io
 import json
 import os
+import ssl
 import sys
 import tempfile
 import unittest
@@ -155,8 +156,15 @@ class ErrorsHttpKeysTests(unittest.TestCase):
                 with patch("builtins.__import__", boom):
                     with patch.object(sys, "frozen", True, create=True):
                         with patch("research_cli.http.Path.is_file", return_value=True):
-                            ctx = ssl_context()
-                            self.assertTrue(ctx.check_hostname)
+                            with patch(
+                                "research_cli.http.ssl.create_default_context"
+                            ) as created:
+                                created.return_value = ssl.SSLContext(
+                                    ssl.PROTOCOL_TLS_CLIENT
+                                )
+                                ctx = ssl_context()
+                                created.assert_called()
+                                self.assertIs(ctx, created.return_value)
 
     def test_keys_windows_parse_and_require(self) -> None:
         from pathlib import PurePosixPath
