@@ -47,6 +47,9 @@ from research_cli.keys import (  # noqa: E402
     require_exa_key,
     require_firecrawl_key,
     require_reddit_credentials,
+    require_telegram_app,
+    require_telegram_session,
+    require_tgstat_session,
     require_x_credentials,
 )
 from research_cli.providers import (  # noqa: E402
@@ -191,6 +194,12 @@ class ErrorsHttpKeysTests(unittest.TestCase):
             require_reddit_credentials({"REDDIT_CLIENT_ID": "x"})
         with self.assertRaises(MissingKeyError):
             require_x_credentials({"X_AUTH_TOKEN": "t"})
+        with self.assertRaises(MissingKeyError):
+            require_telegram_app({"TELEGRAM_API_ID": "1"})
+        with self.assertRaises(MissingKeyError):
+            require_telegram_session({"RESEARCH_CLI_NO_ENV_FILE": "1"})
+        with self.assertRaises(MissingKeyError):
+            require_tgstat_session({"TGSTAT_IDR": "i"})
 
 
 class UpdateBranchTests(unittest.TestCase):

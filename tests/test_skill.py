@@ -18,6 +18,9 @@ from research_cli.keys import (  # noqa: E402
     require_exa_key,
     require_firecrawl_key,
     require_reddit_credentials,
+    require_telegram_app,
+    require_telegram_session,
+    require_tgstat_session,
     require_x_credentials,
 )
 
@@ -36,6 +39,14 @@ ENV_NAMES = (
     "REDDIT_CLIENT_SECRET",
     "X_AUTH_TOKEN",
     "X_CT0",
+    "TGSTAT_IDR",
+    "TGSTAT_SIRK",
+    "TGSTAT_CSRK",
+    "TGSTAT_SETTINGS",
+    "TELEGRAM_API_ID",
+    "TELEGRAM_API_HASH",
+    "TELEGRAM_SESSION",
+    "TELEGRAM_SESSION_FILE",
 )
 
 
@@ -223,6 +234,9 @@ class SkillFileTests(unittest.TestCase):
         self.assertTrue(callable(require_firecrawl_key))
         self.assertTrue(callable(require_reddit_credentials))
         self.assertTrue(callable(require_x_credentials))
+        self.assertTrue(callable(require_telegram_app))
+        self.assertTrue(callable(require_telegram_session))
+        self.assertTrue(callable(require_tgstat_session))
         keys_topic = HELP_TOPICS["keys"]
         self.assertIn(".config/research-cli/env", keys_topic)
         for name in ENV_NAMES:
@@ -242,12 +256,31 @@ class SkillFileTests(unittest.TestCase):
             "REDDIT_CLIENT_SECRET",
             "X_AUTH_TOKEN",
             "X_CT0",
+            "TGSTAT_IDR",
+            "TGSTAT_SIRK",
+            "TELEGRAM_API_ID",
+            "TELEGRAM_API_HASH",
+            "TELEGRAM_SESSION",
+            "TELEGRAM_SESSION_FILE",
         ):
             self.assertIn(name, example)
         self.assertTrue(AGENTS.is_file(), f"missing {AGENTS}")
         agents = AGENTS.read_text(encoding="utf-8")
         self.assertIn("skills/research-cli/SKILL.md", agents)
         self.assertIn("mcp", agents.lower())
+
+    def test_telegram_file_loop_uses_tgstat_target(self) -> None:
+        self.assertIn("telegram.target", self.text)
+        self.assertIn("telegram.has_media", self.text)
+        self.assertIn("Do **not** invent `telegram search`", self.text)
+        examples = "\n".join(_example_lines(self.text))
+        self.assertIn("--download", examples)
+        self.assertIn("--media", examples)
+        self.assertIn("--allow-large", examples)
+        self.assertIn("telegram get", examples)
+        self.assertIn("tgstat me", examples)
+        self.assertNotIn("telegram search", examples)
+        self.assertNotIn("telegram posts", examples)
 
 
 if __name__ == "__main__":

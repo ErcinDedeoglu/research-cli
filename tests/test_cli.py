@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
+sys.path.insert(0, str(ROOT / "tests"))
 sys.path.insert(0, str(SRC))
 
 from research_cli import __version__  # noqa: E402
@@ -46,6 +47,7 @@ from fixtures import (  # noqa: E402
     X_TEXT,
     X_TWEET_ID,
     X_USER,
+    TGSTAT_TEXT,
     snapshot_path_counts,
     start_fixture_server,
 )
@@ -60,6 +62,13 @@ _KEY_VARS = (
     "REDDIT_CLIENT_SECRET",
     "X_AUTH_TOKEN",
     "X_CT0",
+    "TGSTAT_IDR",
+    "TGSTAT_SIRK",
+    "TGSTAT_CSRK",
+    "TGSTAT_SETTINGS",
+    "TELEGRAM_API_ID",
+    "TELEGRAM_API_HASH",
+    "TELEGRAM_SESSION",
     "RESEARCH_CLI_BASE_URL",
     "RESEARCH_CLI_NO_UPDATE",
     "RESEARCH_CLI_CACHE_DIR",
@@ -108,6 +117,8 @@ class HelpTests(unittest.TestCase):
         self.assertIn("exploitdb", text)
         self.assertIn("malpedia", text)
         self.assertIn("twitter", text)
+        self.assertIn("telegram", text)
+        self.assertIn("tgstat", text)
         self.assertIn("--self-update", text)
 
     def test_version_prints_package_version(self) -> None:
@@ -277,6 +288,14 @@ class HelpTests(unittest.TestCase):
             "REDDIT_CLIENT_SECRET",
             "X_AUTH_TOKEN",
             "X_CT0",
+            "TGSTAT_IDR",
+            "TGSTAT_SIRK",
+            "TGSTAT_CSRK",
+            "TGSTAT_SETTINGS",
+            "TELEGRAM_API_ID",
+            "TELEGRAM_API_HASH",
+            "TELEGRAM_SESSION",
+            "TELEGRAM_SESSION_FILE",
         ):
             self.assertIn(name, body)
 
@@ -297,6 +316,15 @@ class MissingKeyTests(unittest.TestCase):
             (["reddit", "subreddit", "python"], "reddit"),
             (["x", "search", "q"], "x"),
             (["x", "thread", "123"], "x"),
+            (["tgstat", "search", "q"], "tgstat"),
+            (["tgstat", "me"], "tgstat"),
+            (["tgstat", "sources", "q"], "tgstat"),
+            (["tgstat", "mentions", "q"], "tgstat"),
+            (["tgstat", "export", "q"], "tgstat"),
+            (["tgstat", "download", "https://t.me/durov/1"], "telegram"),
+            (["telegram", "get", "https://t.me/durov/1"], "telegram"),
+            (["telegram", "me"], "telegram"),
+            (["telegram", "login", "--phone", "+1"], "telegram"),
         ]
         empty = {}
         for argv, provider in cases:
@@ -318,6 +346,15 @@ class MissingKeyTests(unittest.TestCase):
         thread = _run_module("x", "thread", "123")
         self.assertEqual(thread.returncode, 2, thread.stderr)
         self.assertIn("x_ct0", thread.stderr.lower())
+
+    def test_subprocess_missing_tgstat_cookies(self) -> None:
+        search = _run_module("tgstat", "search", "q")
+        self.assertEqual(search.returncode, 2, search.stderr)
+        self.assertIn("tgstat", search.stderr.lower())
+        self.assertIn("tgstat_idr", search.stderr.lower())
+        catalogs = _run_module("tgstat", "catalogs")
+        self.assertEqual(catalogs.returncode, 0, catalogs.stderr)
+        self.assertIn("english", catalogs.stdout)
 
     def test_subprocess_env_file_fills_brave_key(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -347,6 +384,8 @@ class FixtureServerCliTests(unittest.TestCase):
                 "REDDIT_CLIENT_SECRET": "fixture-reddit-secret",
                 "X_AUTH_TOKEN": "fixture-x-auth",
                 "X_CT0": "fixture-x-ct0",
+                "TGSTAT_IDR": "fixture-idr",
+                "TGSTAT_SIRK": "fixture-sirk",
                 "RESEARCH_CLI_CACHE_DIR": cls._cache.name,
             }
         )
@@ -371,6 +410,7 @@ class FixtureServerCliTests(unittest.TestCase):
             (["exploitdb", "search", "log4j"], EDB_TITLE),
             (["malpedia", "search", "emotet"], MALPEDIA_FAMILY_ID),
             (["x", "search", "VMProtect"], X_TEXT),
+            (["tgstat", "search", "llvm"], TGSTAT_TEXT),
         ]
         for _ in range(2):
             for args, needle in commands:

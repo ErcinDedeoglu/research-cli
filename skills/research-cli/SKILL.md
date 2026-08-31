@@ -5,18 +5,19 @@ description: >
   MUST USE for search and research. Whenever the user asks to search, research,
   look up, find, google, investigate, cite, gather sources, check the web, or
   find papers/literature — run this CLI and call EVERY provider in parallel
-  (bgpt, brave, exa, firecrawl, reddit, x). For CVE, exploit, PoC, RCE, or hacktool
+  (bgpt, brave, exa, firecrawl, reddit, x, tgstat). For CVE, exploit, PoC, RCE, or hacktool
   queries, also run sploitus and exploitdb. For malware family, YARA, or actor
-  queries, also run malpedia. Do not pick one. Do not guess or use vendor MCP.
+  queries, also run malpedia. For Telegram files after a tgstat hit, use tgstat download
+  on telegram.target (Telegram user session). Do not pick one. Do not guess or use vendor MCP.
   Triggers: search, research, papers, literature, scrape, lookup, google, cite,
-  sources, bgpt, brave, exa, firecrawl, reddit, sploitus, exploitdb, malpedia, x, twitter, /research-cli.
+  sources, bgpt, brave, exa, firecrawl, reddit, sploitus, exploitdb, malpedia, x, twitter, telegram, tgstat, /research-cli.
 ---
 
 # research-cli
 
 Run this CLI. Do not call vendor MCP servers. Do not invent subcommands or flags — copy from **Commands** below.
 
-JSON on stdout, errors on stderr. Shared flags on every provider command: `--timeout` (seconds, default 60), `--base-url` (fixture/origin override only). Missing Brave/Exa/Firecrawl/Reddit/X keys exit 2 and name the provider.
+JSON on stdout, errors on stderr. Shared flags on every provider command: `--timeout` (seconds, default 60), `--base-url` (fixture/origin override only). Missing Brave/Exa/Firecrawl/Reddit/X/TGStat/Telegram keys exit 2 and name the provider.
 
 ## Version guard
 
@@ -24,7 +25,7 @@ JSON on stdout, errors on stderr. Shared flags on every provider command: `--tim
 
 ## Keys
 
-`research-cli help keys` — env file (`$HOME/.config/research-cli/env`, Windows `%APPDATA%\research-cli\env`), provider key table, missing-key behavior. Missing required key: ask the user, write the file, retry. Skip `x` if cookies are unset; do not block other providers.
+`research-cli help keys` — env file (`$HOME/.config/research-cli/env`, Windows `%APPDATA%\research-cli\env`), provider key table, missing-key behavior. Missing required key: ask the user, write the file, retry. Skip `x` if cookies are unset; skip `tgstat` if `TGSTAT_IDR`/`TGSTAT_SIRK` are unset; skip `telegram` if `TELEGRAM_SESSION` is unset; do not block other providers.
 
 ## Search
 
@@ -38,6 +39,7 @@ research-cli firecrawl search "QUERY" --categories research
 research-cli firecrawl papers search "QUERY"
 research-cli reddit search "QUERY"
 research-cli x search "QUERY"
+research-cli tgstat search "QUERY"
 ```
 
 CVE / exploit / PoC / RCE / hacktool — also:
@@ -53,7 +55,7 @@ Malware family / YARA / actor — also:
 research-cli malpedia search "QUERY"
 ```
 
-Merge the JSON, then use **Commands** to follow a hit (scrape a URL, open a thread, read a paper id, dump a PoC). Do not stop at titles if the user needs the page, comments, or exploit body.
+Merge the JSON, then use **Commands** to follow a hit (scrape a URL, open a thread, read a paper id, dump a PoC, `tgstat download` a Telegram file). Do not stop at titles if the user needs the page, comments, or exploit body.
 
 ## Commands
 
@@ -250,4 +252,60 @@ research-cli x search "QUERY" --compact --fields id,url,text,user,likes
 research-cli x thread 2069347283918000383
 research-cli x thread https://x.com/user/status/2069347283918000383
 research-cli x thread 2069347283918000383 --compact --fields id,url,text
+```
+
+### tgstat
+
+Public Telegram **post search** via the logged-in **Premium-search website** (not Search API). Needs `TGSTAT_IDR` (cookie `tgstat_idrk`) and `TGSTAT_SIRK` (cookie `tgstat_sirk`) from tgstat.com — HttpOnly; copy from the browser Application cookies, same idea as X. Optional `TGSTAT_CSRK` / `TGSTAT_SETTINGS`. CSRF is fetched from `GET /search` each search. Dead/expired cookies exit 2. Skip if unset.
+
+This is the internet-wide Telegram search. Do **not** use `telegram search` / `telegram posts` (those commands do not exist). Do not buy or call the Search API. Website UI defaults to 7 days; the CLI omits dates unless `--start`/`--end` so the archive is used. Hard cap **1000 posts per query** (20/page). Query count is unlimited on Premium-search.
+
+Shared search filters (search / sources / mentions / export): `--peer-type` `all|channel|chat` (default `all`). `--start` / `--end` `YYYY-MM-DD` or `DD.MM.YYYY`. `--sort` `date|views` (default `date`). `--country` `--language` `--category` slugs (`tgstat catalogs`). `--minus-words`. `--views-range` `all|lt1000|1k-10k|10k` (default `all`). `--channel-id` TGStat numeric id from `sources`. `--source-sort` `members|freq` (default `members`). `--forwards` `all|hide|only` (default `all`; `--hide-forwards` is `hide`). `--hide-deleted` `--strong` `--extended` `--only-mentioned`.
+
+Agent loop for Telegram files: `tgstat search` (prefer `--peer-type channel`) → keep hits whose `telegram.has_media` is true and `telegram.private` is false → `tgstat download` **only** `telegram.target`. Do **not** invent `telegram search`. Do **not** join chats. Private joinchat hits are omitted unless `--private`. Link-preview cards are not files; Telegram `get`/`download` is the source of truth (`document|photo|video`, plus mime/name/size).
+
+- `search` — `POST /search/list`. `--limit` default 20 (cap 1000). `--offset`. `--download DIR` inspects via Telegram and saves real files. `--media` `document|photo|video`. `--allow-large` keeps files over 25MB. `--jobs` default 4. `--private` includes joinchat hits. Each hit has `telegram.target` (the only download argument), `telegram.has_media`, `telegram.private`.
+- `sources` — mentioning channels (`id`, `title`, `members`, `freq`) for `--channel-id`.
+- `mentions` — mentions/reach chart. `--group` `day|month` (default `day`).
+- `export` — xlsx of hits. `--output` file or directory. Use `--timeout 180` for large queries.
+- `catalogs` — country / language / category / filter value lists. No cookies.
+- `me` — cookie probe. Expired session: recopy `tgstat_idrk` / `tgstat_sirk`.
+- `download` — Telegram user session fetches the file for `telegram.target`. Public `@channel`: no join. Private: already a member only. CLI does not join.
+
+```bash
+research-cli tgstat search "llvm obfuscation" --limit 20
+research-cli tgstat search "QUERY" --peer-type channel --sort views --views-range 1k-10k --forwards hide
+research-cli tgstat search "QUERY" --download /tmp --media document --allow-large
+research-cli tgstat sources "QUERY"
+research-cli tgstat mentions "QUERY" --group month
+research-cli tgstat export "QUERY" --output /tmp
+research-cli tgstat catalogs
+research-cli tgstat me
+research-cli tgstat download https://t.me/durov/1 --output /tmp
+research-cli tgstat download https://t.me/joinchat/AbCdefgh/12 --output /tmp
+```
+
+### telegram
+
+Logged-in **user** MTProto via Telethon. **Not** Bot API / BotFather. **Not** public post search — that is `tgstat`. `login` is **once**. It writes `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` / `TELEGRAM_SESSION` to `~/.config/research-cli/env` and a durable `telegram.session` next to that file. Live calls use an in-memory copy so `discover` / `history` / `download` can run in **parallel**. Every later command reuses that session — no phone, no code. Lasts until you revoke the device in Telegram (Settings → Devices). Copy the env file **and** `telegram.session` to a server. No Telegram app at runtime. Dead/revoked session exit 2. Skip if unset. Optional `TELEGRAM_SESSION_FILE` overrides the sqlite path.
+
+- `login` — `--api-id` and `--api-hash` from https://my.telegram.org/apps. `--phone +country…` then `telegram login --code CODE`. 2FA: `--password`. `--no-write-env` skips saving. Never commit the env or `.session` file.
+- `me` — current user for the session.
+- `discover` — `contacts.search` public users/groups/channels by name (no join). `--limit` default 20.
+- `history` — messages from a public `@username` / `t.me/user` (often works without membership). `--search` runs `messages.search` in that chat. `--limit` default 50. `--offset-id` / `--min-id`. `t.me/user/id` uses that id as `--offset-id`. Invite links are not history; use `resolve`.
+- `resolve` — `@username` / `t.me/user`, or peek `t.me/+invite` / `t.me/joinchat/…` without joining. Invite JSON `status` is `already_member`, `request_needed`, `preview`, `peek`, or `expired`. CLI does not join.
+- `get` — one message body (text + Telegram media classification). Use this for text posts (`has_media` false). Same targets as download.
+- `download` — one message's **file** (`document|photo|video`). Link-preview `web_page` is not a file (`no media`). Same `telegram.target` as `tgstat download`. Prefer `tgstat download` after a search hit.
+
+```bash
+research-cli telegram login --api-id 123456 --api-hash HASH --phone +15551234567
+research-cli telegram login --code 12345
+research-cli telegram me
+research-cli telegram discover "reverse engineering"
+research-cli telegram history @durov --limit 20
+research-cli telegram resolve durov
+research-cli telegram resolve https://t.me/joinchat/AbCdefgh
+research-cli telegram get https://t.me/durov/1
+research-cli telegram download https://t.me/durov/1 --output /tmp
+research-cli telegram download https://t.me/joinchat/AbCdefgh/12 --output /tmp
 ```

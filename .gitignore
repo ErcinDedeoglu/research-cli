@@ -12,3 +12,6 @@ htmlcov/
 .env
 .env.*
 !.env.example
+*.session
+*.session-journal
+*.session.lock

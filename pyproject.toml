@@ -5,10 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "research-cli"
 dynamic = ["version"]
-description = "Agent-facing research CLI for BGPT, Brave, Exa, Firecrawl, Reddit, Sploitus, Exploit-DB, and Malpedia HTTP APIs"
+description = "Agent-facing research CLI for BGPT, Brave, Exa, Firecrawl, Reddit, Sploitus, Exploit-DB, Malpedia, X, TGStat, and Telegram"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+dependencies = ["telethon>=1.44.0,<2"]
 
 [project.scripts]
 research-cli = "research_cli.cli:run"

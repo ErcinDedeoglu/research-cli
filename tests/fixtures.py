@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -821,6 +822,63 @@ X_THREAD_PAYLOAD = {
 }
 
 
+TGSTAT_TEXT = "Fixture TGStat llvm obfuscation post"
+TGSTAT_LINK = "https://t.me/fixturechan/12"
+TGSTAT_URL = "https://t.me/fixturechan/12"
+TGSTAT_POST_ID = 9752256304
+TGSTAT_CSRF = "fixture-csrf-token"
+TGSTAT_POST_HTML = f"""
+<div id="post-{TGSTAT_POST_ID}" class="card card-body border p-2 post-container">
+  <div class="post-header">
+    <h5><a href="https://tgstat.com/en/channel/@fixturechan">fixturechan</a></h5>
+    <p class="text-muted m-0"><small>31 Aug, 03:49</small></p>
+    <a href="https://ttttt.me/fixturechan/12">Open in Telegram</a>
+  </div>
+  <div class="post-body isPhoto">
+    <div class="post-text">{TGSTAT_TEXT}</div>
+  </div>
+  <a><i class="uil-eye"></i>42</a>
+  <a><i class="uil-share-alt"></i>3</a>
+  <span><i class="uil-corner-up-right"></i>1</span>
+</div>
+"""
+TGSTAT_SEARCH_PAGE = f"""
+<html><body>
+<form id="search-form-top" class="lm-form" action="/search" method="POST">
+<input type="hidden" name="_tgstat_csrk" value="{TGSTAT_CSRF}">
+<input type="text" name="q">
+</form>
+</body></html>
+"""
+TGSTAT_LIST_PAYLOAD = {
+    "status": "ok",
+    "hasMore": False,
+    "currentLoadedCount": 20,
+    "totalCount": 1,
+    "nextPage": 1,
+    "nextOffset": 20,
+    "html": TGSTAT_POST_HTML,
+}
+TGSTAT_ERROR_PAYLOAD = {"status": "error", "error": "search failed"}
+TGSTAT_MENTIONS_PAYLOAD = {
+    "status": "ok",
+    "data": {
+        "count": [{"x": "31 Aug", "y": 3}],
+        "reach": [{"x": "31 Aug", "y": 100}],
+    },
+}
+TGSTAT_SOURCE_ID = 42
+TGSTAT_SOURCES_HTML = f"""
+<html><body>
+<div class="list-group-item channel-source-item" data-id="{TGSTAT_SOURCE_ID}" data-freq="3" data-members="1000">
+  <div class="mt-2 mb-0 text-body">Fixture Source</div>
+  <a href="https://tgstat.com/en/channel/@fixturechan">@fixturechan</a>
+</div>
+</body></html>
+"""
+TGSTAT_XLSX_NAME = "TGStat-Export.xlsx"
+TGSTAT_XLSX_BYTES = b"PK\x03\x04fixture-xlsx"
+
 _POST_ROUTES = {
     "/api/mcp-search": BGPT_PAYLOAD,
     "/search": EXA_SEARCH_PAYLOAD,
@@ -881,6 +939,10 @@ class FixtureHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         self._count_path(path)
+        cookie = self.headers.get("Cookie") or ""
+        if path == "/search" and "tgstat_idrk=" in cookie:
+            self._send_html(TGSTAT_SEARCH_PAGE)
+            return
         if path.startswith("/api/find/family/"):
             self._send(200, MALPEDIA_FIND_FAMILY)
             return
@@ -1087,14 +1149,45 @@ class FixtureHandler(BaseHTTPRequestHandler):
             return
         self._send(404, {"error": f"no fixture for GET {path}"})
 
+    def _send_bytes(
+        self, status: int, body: bytes, content_type: str, filename: str | None = None
+    ) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        if filename:
+            self.send_header(
+                "Content-Disposition", f'attachment; filename="{filename}"'
+            )
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self) -> None:  # noqa: N802
         self._read_body()
         path = urlparse(self.path).path
+        cookie = self.headers.get("Cookie") or ""
+        if path == "/search/list":
+            self._send(200, TGSTAT_LIST_PAYLOAD)
+            return
+        if path == "/search/mentions-chart":
+            self._send(200, TGSTAT_MENTIONS_PAYLOAD)
+            return
+        if path == "/search/export/xls":
+            self._send_bytes(
+                200,
+                TGSTAT_XLSX_BYTES,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                TGSTAT_XLSX_NAME,
+            )
+            return
         if (
             path == "/search"
             and self.headers.get("X-Requested-With") == "sploitus-frontend"
         ):
             self._send(200, SPLOITUS_SEARCH_PAYLOAD)
+            return
+        if path == "/search" and "tgstat_idrk=" in cookie:
+            self._send_html(TGSTAT_SOURCES_HTML)
             return
         payload = _POST_ROUTES.get(path)
         if payload is None:

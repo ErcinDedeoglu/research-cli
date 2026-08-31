@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install
+        run: python -m pip install --disable-pip-version-check -e .
       - name: Run tests
         run: PYTHONPATH=src python -m unittest discover -s tests -v
 
@@ -114,7 +116,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements-freeze.txt
       - name: Freeze
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --name research-cli --paths src --collect-submodules research_cli --hidden-import certifi --collect-all certifi src/research_cli/__main__.py
+          python -m PyInstaller --noconfirm --clean --onefile --name research-cli --paths src --collect-submodules research_cli --hidden-import certifi --collect-all certifi --hidden-import telethon --collect-all telethon src/research_cli/__main__.py
       - name: Name artifact (Unix)
         if: runner.os != 'Windows'
         run: |

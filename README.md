@@ -1,6 +1,6 @@
 # research-cli
 
-Agent-facing CLI that searches papers and the web by calling **BGPT**, **Brave Search**, **Exa**, **Firecrawl**, **Reddit**, **Sploitus**, **Exploit-DB**, and **Malpedia** HTTP APIs directly (not MCP).
+Agent-facing CLI that searches papers and the web by calling **BGPT**, **Brave Search**, **Exa**, **Firecrawl**, **Reddit**, **Sploitus**, **Exploit-DB**, **Malpedia**, **X**, and **TGStat** HTTP APIs directly, plus **Telegram** as a user MTProto client for history/download (Telethon, not Bot API, not MCP).
 
 Agents should follow [`skills/research-cli/SKILL.md`](skills/research-cli/SKILL.md).
 
@@ -68,9 +68,19 @@ Every push to `main` bumps **SemVer** (`vMAJOR.MINOR.PATCH`) from conventional c
 | `research-cli malpedia family ID` | `GET .../api/get/family/{id}` | none |
 | `research-cli malpedia yara ID` | `GET .../api/get/yara/{id}` | none |
 | `research-cli malpedia bib --family ID` | `GET .../api/get/bib/family/{id}` | none |
+| `research-cli x search QUERY` | X web GraphQL SearchTimeline | `X_AUTH_TOKEN` + `X_CT0` |
+| `research-cli tgstat search QUERY` | TGStat Premium-search `GET /search` + `POST /search/list` | `TGSTAT_IDR` + `TGSTAT_SIRK` |
+| `research-cli tgstat sources QUERY` | Premium-search mentioning channels | same |
+| `research-cli tgstat mentions QUERY` | `POST /search/mentions-chart` | same |
+| `research-cli tgstat export QUERY` | `POST /search/export/xls` (xlsx) | same |
+| `research-cli tgstat catalogs` | Static country/language/category lists | none |
+| `research-cli tgstat download URL` | Telegram `download_media` (website has no file bytes) | Telegram session |
+| `research-cli telegram history @user` | MTProto `messages.getHistory` | `TELEGRAM_API_ID` + `TELEGRAM_API_HASH` + `TELEGRAM_SESSION` |
+| `research-cli telegram download URL` | MTProto `download_media` | same |
 
 ## Tests
 
 ```bash
+pip install -e .
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```

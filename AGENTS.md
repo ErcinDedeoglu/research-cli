@@ -1,9 +1,9 @@
 <!-- FOR AI AGENTS - Human readability is a side effect, not a goal -->
-<!-- Last updated: 2026-08-28 | Last verified: 2026-08-28 -->
+<!-- Last updated: 2026-08-31 | Last verified: 2026-08-31 -->
 
 # AGENTS.md
 
-**This repo** is an agent-facing **research CLI**. It calls **BGPT, Brave Search, Exa, Firecrawl, Reddit, Sploitus, Exploit-DB, Malpedia, and X over HTTP REST** (not MCP). Agents use the CLI via the skill; coding agents change code here.
+**This repo** is an agent-facing **research CLI**. It calls **BGPT, Brave Search, Exa, Firecrawl, Reddit, Sploitus, Exploit-DB, Malpedia, X, and TGStat over HTTP REST**, and **Telegram as a user MTProto client via Telethon** for history/download (not Bot API, not MCP; public post search is TGStat). Agents use the CLI via the skill; coding agents change code here.
 
 **Playbook for running research:** [`skills/research-cli/SKILL.md`](skills/research-cli/SKILL.md) — commands, env keys, when-to-use. Do not copy that into this file.
 
@@ -15,7 +15,7 @@
 |------|---------|-------|
 | Install | `pip install -e .` | ~5s |
 | Help | `python -m research_cli --help` | <1s |
-| Tests | `PYTHONPATH=src python -m unittest discover -s tests -v` | ~2s |
+| Tests | `pip install -e .` then `PYTHONPATH=src python -m unittest discover -s tests -v` | ~2s |
 | Skill alignment | `PYTHONPATH=src python -m unittest tests.test_skill -v` | <1s |
 | Zipapp | `bash scripts/build-zipapp.sh dist` | ~1s |
 | Self-update (source/pip) | `python -m research_cli --self-update` | <1s |
@@ -41,9 +41,13 @@ src/research_cli/providers/exploitdb.py  → GET /search, GET /, GET /papers, GE
 src/research_cli/providers/malpedia.py   → guest GET /api/find|get|list (family, actor, yara, bib, misp, references, version); yara tlp/auto/after dumps; family yara zip. Sample zip helpers exist in-module, not CLI-wired.
 src/research_cli/providers/x.py          → GraphQL SearchTimeline / TweetDetail (cookie auth + generated x-client-transaction-id); ~1h origin-keyed bootstrap cache under RESEARCH_CLI_CACHE_DIR
 src/research_cli/providers/x_transaction.py → homepage SVG + ondemand.s.js tid generator (stdlib)
+src/research_cli/providers/tgstat.py     → GET /search CSRF; POST /search/list (20/page, cap 1000); POST /search/mentions-chart; POST /search/export/xls; POST /search sources; catalogs; cookies TGSTAT_IDR/SIRK; download is Telegram session
+src/research_cli/providers/telegram.py   → Telethon user MTProto (not Bot API): contacts.search, getHistory, resolveUsername, checkChatInvite peek, get one message, download_media. No searchGlobal/searchPosts. Does not join.
 skills/research-cli/SKILL.md         → agent playbook (not under .grok/; copy to kenopahq/skills/research-cli on change)
 skills/research-cli/INSTALL.md       → install without the binary (raw GitHub URL from the skill); keep in lockstep with `help install`
 tests/test_skill.py                  → skill ↔ CLI parser/keys alignment
+tests/test_tgstat.py                 → Premium-search CSRF/list parse, telegram.target, fetch_files
+tests/test_telegram.py               → Telethon FakeClient: parse, get, download, resolve peek, no join
 tests/test_providers.py              → injectable HTTP: method/path/auth/parse
 tests/test_cli.py                    → --help, missing keys, fixture-server CLI
 tests/test_update.py                 → version compare, assets, replace, background spawn, --self-update
@@ -52,9 +56,9 @@ tests/fixtures.py                    → fixture JSON + local HTTP server
 .env.example                         → placeholder keys
 .github/workflows/ci.yml             → unittest on Python 3.11/3.12
 .github/workflows/release.yml        → test, SemVer bump/tag, pip-cached freeze, GitHub Release on every main commit
-requirements-freeze.txt              → pinned PyInstaller for the freeze job
+requirements-freeze.txt              → pinned PyInstaller + Telethon for the freeze job
 scripts/semver.py                    → next/apply MAJOR.MINOR.PATCH from v* tags + conventional commits
-scripts/build-zipapp.sh              → stdlib zipapp (`research-cli.pyz`)
+scripts/build-zipapp.sh              → zipapp with vendored Telethon (`research-cli.pyz`)
 ```
 
 ## Release lifecycle (every push to `main`)
@@ -63,7 +67,7 @@ Source of truth: [`.github/workflows/release.yml`](.github/workflows/release.yml
 
 | Step | Job | What happens |
 |------|-----|----------------|
-| 1 | `test` | `PYTHONPATH=src python -m unittest discover -s tests -v` |
+| 1 | `test` | `pip install -e .` then `PYTHONPATH=src python -m unittest discover -s tests -v` |
 | 2 | `version` | `python scripts/semver.py next` then `apply` (writes `__version__` **and** skill frontmatter `version:`); commit `chore: release vX.Y.Z`; `git tag vX.Y.Z`; push tag + commit |
 | 3 | `zipapp` + `freeze` (parallel) | Checkout **the tag**, not the triggering SHA. Zipapp + PyInstaller onefile. Pip cache keyed by `requirements-freeze.txt` |
 | 4 | `publish` | `gh release create "$TAG" artifacts --verify-tag --latest`. Tag already exists; do **not** pass `--target $TAG` (GitHub 422: `target_commitish` must be a branch or SHA) |
@@ -103,6 +107,8 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | Agent needs papers/web/scrape | Point at `skills/research-cli/SKILL.md` and the CLI — do not call vendor MCP servers |
 | Agent needs malware family/YARA | `research-cli malpedia search` then `family` / `yara` / `bib --family` / `references --url` (guest; sample zip not on CLI) |
 | Agent needs X/Twitter posts | `research-cli x search` then `x thread` (`X_AUTH_TOKEN` + `X_CT0`; never commit cookies) |
+| Agent needs Telegram posts | `tgstat search --peer-type channel` then keep public `telegram.has_media` hits and `tgstat download` **only** `telegram.target`. Or `tgstat search --download DIR --media document`. Text posts: `telegram get` that URL. Do not invent `telegram search`. Do not join. |
+| Agent needs Telegram history/file on a known `@user` | `telegram login` once (`TELEGRAM_API_ID` + `TELEGRAM_API_HASH` + `TELEGRAM_SESSION`). Then `discover` / `history` / `download`. User account, not a bot; CLI does not join |
 | CVE/exploit/PoC also | Run sploitus **and** exploitdb (EDB is the OffSec primary; Sploitus is an index) |
 | Add/change a CLI command or flag | Update provider + `cli.py` + skill **Commands** (when-to-use, flags/defaults, a parseable example) + `tests/test_skill.py` in the same change, then copy `skills/research-cli/SKILL.md` to `/Users/ercin/git/github/kenopahq/skills/research-cli/` |
 | Skill `version:` vs `research-cli --version` | Must match. Skill older → replace file from `raw.githubusercontent.com/ErcinDedeoglu/research-cli/main/skills/research-cli/SKILL.md`. Binary older → `--self-update` |
@@ -117,8 +123,8 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 
 ### Always
 - Keep `skills/research-cli/SKILL.md` aligned with `build_parser()` and `keys.py`. Install steps live in `skills/research-cli/INSTALL.md` (skill links the raw GitHub URL — agents with no binary) and `research-cli help install` (same body). Key setup lives in `research-cli help keys`.
-- Run `PYTHONPATH=src python -m unittest discover -s tests -v` after CLI/skill changes
-- JSON on stdout, errors on stderr; missing Brave/Exa/Firecrawl/Reddit/X keys exit 2 and name the provider; Sploitus, Exploit-DB, and Malpedia catalog/YARA need no key; never commit `X_AUTH_TOKEN` / `X_CT0`
+- Run `PYTHONPATH=src python -m unittest discover -s tests -v` after CLI/skill changes (Telethon must be installed: `pip install -e .`)
+- JSON on stdout, errors on stderr; missing Brave/Exa/Firecrawl/Reddit/X/TGStat/Telegram keys exit 2 and name the provider; Sploitus, Exploit-DB, and Malpedia catalog/YARA need no key; never commit `X_AUTH_TOKEN` / `X_CT0` / `TELEGRAM_SESSION` / `TGSTAT_IDR` / `TGSTAT_SIRK`
 - Conventional commits on `main`; leave `__version__` to the release workflow
 - Publish with `gh release create <tag> --verify-tag` (tag is created in the `version` job)
 
@@ -139,7 +145,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | Term | Means |
 |------|-------|
 | Skill | `skills/research-cli/SKILL.md` — how agents **run** the CLI |
-| Provider | One HTTP backend: bgpt, brave, exa, firecrawl, reddit, sploitus, exploitdb, malpedia, x |
+| Provider | One backend: bgpt, brave, exa, firecrawl, reddit, sploitus, exploitdb, malpedia, x, tgstat, telegram |
 | `--base-url` | Override API origin (fixture tests), not a vendor path |
 | `--live` | Firecrawl scrape `maxAge=0` |
 | `--self-update` | Foreground GitHub latest-release replace (always download matching asset) |
@@ -153,4 +159,6 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | malpedia | Fraunhofer FKIE malware catalog: guest `GET /api/find|get|list|yara|bib|misp|references`; bulk `yara-dump` / `yara-after`; sample zip not on CLI |
 | exploitdb | Guest DataTables: `GET /search` with `X-Requested-With: XMLHttpRequest`; hubs `/exploits/{id}`, `/raw/{id}`, GHDB, papers, shellcodes |
 | x | Logged-in X web GraphQL: `GET /i/api/graphql/{queryId}/SearchTimeline` and `TweetDetail`; cookies `auth_token`+`ct0`; generated `x-client-transaction-id`; homepage+ondemand+main.js cached ~1h under `RESEARCH_CLI_CACHE_DIR` |
+| tgstat | Logged-in tgstat.com Premium-search: `GET /search` CSRF + `POST /search/list` + mentions-chart + xls export + sources; cookies `tgstat_idrk`/`tgstat_sirk` as `TGSTAT_IDR`/`TGSTAT_SIRK`; 20/page, hard cap 1000; download is Telegram session |
+| telegram | User MTProto via Telethon (not Bot API): `TELEGRAM_API_ID`+`TELEGRAM_API_HASH`+`TELEGRAM_SESSION`; sqlite `telegram.session` next to the env file; login once; discover/history/download; does not join chats; public post search is tgstat |
 | SemVer | `src/research_cli/__init__.py` `__version__`; skill frontmatter `version:` must match; tags `vMAJOR.MINOR.PATCH`; `python scripts/semver.py next` |
