@@ -28,6 +28,7 @@ from research_cli.update import (  # noqa: E402
     update_command,
     version_is_newer,
     wait_for_pid,
+    wait_until_replace_safe,
 )
 
 from fixtures import BGPT_PAYLOAD, BGPT_TITLE  # noqa: E402
@@ -135,6 +136,40 @@ class ReplaceTests(unittest.TestCase):
             self.assertTrue(leftover.is_file())
             self.assertEqual(leftover.read_bytes(), b"old-exe")
 
+    def test_wait_until_replace_safe_clears_then_ok(self) -> None:
+        states = [{9}, {9}, set()]
+
+        def holders(_path: Path) -> set[int]:
+            return states.pop(0) if states else set()
+
+        self.assertTrue(
+            wait_until_replace_safe(
+                Path("/tmp/research-cli"),
+                holders=holders,
+                self_pid=1,
+                sleeper=lambda _t: None,
+                clock=lambda: 0,
+                timeout=10,
+            )
+        )
+
+    def test_wait_until_replace_safe_times_out(self) -> None:
+        ticks = [0.0, 1.0, 100.0]
+
+        def clock() -> float:
+            return ticks.pop(0) if ticks else 100.0
+
+        self.assertFalse(
+            wait_until_replace_safe(
+                Path("/tmp/research-cli"),
+                holders=lambda _p: {9},
+                self_pid=1,
+                sleeper=lambda _t: None,
+                clock=clock,
+                timeout=5,
+            )
+        )
+
 
 class SelfUpdateTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -192,6 +227,30 @@ class SelfUpdateTests(unittest.TestCase):
         self.assertEqual(payload["from"], "0.1.0")
         self.assertEqual(install.path.read_bytes(), body)
         self.assertEqual(transport.urls, [LATEST_API, DARWIN_URL])
+
+    def test_skips_replace_while_another_process_has_the_binary_open(self) -> None:
+        install = self._install()
+        body = b"should-not-replace"
+        release = _release(
+            "v9.9.9",
+            [_asset("research-cli-Darwin-arm64", DARWIN_URL, body)],
+        )
+        transport = MapTransport(
+            {
+                LATEST_API: _json_response(release),
+                DARWIN_URL: HttpResponse(200, {}, body),
+            }
+        )
+        payload = run_self_update(
+            environ=self.environ,
+            transport=transport,
+            install=install,
+            current_version="0.1.0",
+            holders=lambda _path: {999},
+            hold_timeout=0.0,
+        )
+        self.assertEqual(payload["status"], "busy")
+        self.assertEqual(install.path.read_bytes(), b"old-binary")
 
     def test_force_replaces_even_when_tag_matches(self) -> None:
         install = self._install()

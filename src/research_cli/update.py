@@ -23,7 +23,9 @@ DEFAULT_API = "https://api.github.com"
 MAX_ASSET_BYTES = 200 * 1024 * 1024
 EXPLICIT_TIMEOUT = 60.0
 WAIT_PARENT_TIMEOUT = 30.0
+WAIT_HOLDERS_TIMEOUT = 45.0
 WAIT_PID_ENV = "RESEARCH_CLI_UPDATE_WAIT_PID"
+_RUN_LOCK: IO[str] | None = None
 _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _TRUTHY = {"1", "true", "yes", "on"}
 PopenFn = Callable[..., Any]
@@ -342,8 +344,9 @@ def wait_for_parent(environ: Mapping[str, str]) -> None:
     wait_for_pid(pid)
 
 
-def acquire_update_lock(environ: Mapping[str, str], *, blocking: bool) -> IO[str] | None:
-    path = cache_dir(environ) / "update.lock"
+def acquire_file_lock(
+    path: Path, *, exclusive: bool, blocking: bool
+) -> IO[str] | None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         handle = path.open("a+")
@@ -354,12 +357,15 @@ def acquire_update_lock(environ: Mapping[str, str], *, blocking: bool) -> IO[str
             import msvcrt
 
             handle.seek(0)
-            flags = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
+            if exclusive:
+                flags = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
+            else:
+                flags = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
             msvcrt.locking(handle.fileno(), flags, 1)
         else:
             import fcntl
 
-            flags = fcntl.LOCK_EX
+            flags = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
             if not blocking:
                 flags |= fcntl.LOCK_NB
             fcntl.flock(handle.fileno(), flags)
@@ -367,6 +373,104 @@ def acquire_update_lock(environ: Mapping[str, str], *, blocking: bool) -> IO[str
         handle.close()
         return None
     return handle
+
+
+def acquire_update_lock(environ: Mapping[str, str], *, blocking: bool) -> IO[str] | None:
+    return acquire_file_lock(
+        cache_dir(environ) / "update.lock", exclusive=True, blocking=blocking
+    )
+
+
+def install_run_lock_path(target: Path, environ: Mapping[str, str] | None = None) -> Path:
+    sibling = target.parent / f".{target.name}.run.lock"
+    try:
+        sibling.parent.mkdir(parents=True, exist_ok=True)
+        probe = sibling.open("a+")
+        probe.close()
+        return sibling
+    except OSError:
+        env = os.environ if environ is None else environ
+        digest = hex(abs(hash(str(target.resolve()))))[2:]
+        return cache_dir(env) / f"run-{digest}.lock"
+
+
+def hold_running_install_lock(
+    install: Install | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Shared lock so a self-update cannot swap the file under a live process."""
+    global _RUN_LOCK
+    if _RUN_LOCK is not None:
+        return
+    if os.name == "nt":
+        return
+    install = install or current_install()
+    if install.kind not in {"frozen", "zipapp"} or install.path is None:
+        return
+    _RUN_LOCK = acquire_file_lock(
+        install_run_lock_path(install.path, environ),
+        exclusive=False,
+        blocking=True,
+    )
+
+
+def pids_holding_executable(target: Path) -> set[int]:
+    """PIDs that still have the on-disk binary open (bootloader extract)."""
+    try:
+        resolved = str(target.resolve())
+    except OSError:
+        return set()
+    if os.name == "nt":
+        return set()
+    proc = Path("/proc")
+    if proc.is_dir():
+        found: set[int] = set()
+        for entry in proc.iterdir():
+            if not entry.name.isdigit():
+                continue
+            pid = int(entry.name)
+            try:
+                exe = os.readlink(entry / "exe")
+            except OSError:
+                continue
+            if exe == resolved or exe.startswith(resolved + " "):
+                found.add(pid)
+        return found
+    try:
+        output = subprocess.check_output(
+            ["lsof", "-t", resolved],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return set()
+    return {int(line) for line in output.split() if line.isdigit()}
+
+
+def wait_until_replace_safe(
+    target: Path,
+    *,
+    timeout: float = WAIT_HOLDERS_TIMEOUT,
+    self_pid: int | None = None,
+    holders: Callable[[Path], set[int]] | None = None,
+    sleeper: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.time,
+) -> bool:
+    """True when no other process has the binary open (or Windows, where we skip)."""
+    if os.name == "nt":
+        return True
+    me = os.getpid() if self_pid is None else self_pid
+    list_holders = holders or pids_holding_executable
+    deadline = clock() + timeout
+    while True:
+        others = {pid for pid in list_holders(target) if pid != me}
+        if not others:
+            return True
+        if clock() >= deadline:
+            return False
+        sleeper(0.1)
 
 
 def update_command(install: Install) -> list[str]:
@@ -452,6 +556,8 @@ def run_self_update(
     install: Install | None = None,
     current_version: str | None = None,
     timeout: float = EXPLICIT_TIMEOUT,
+    holders: Callable[[Path], set[int]] | None = None,
+    hold_timeout: float | None = None,
 ) -> dict[str, Any]:
     wait_for_parent(environ)
     install = install or current_install()
@@ -483,6 +589,8 @@ def run_self_update(
             version=version,
             timeout=timeout,
             force=not background,
+            holders=holders,
+            hold_timeout=WAIT_HOLDERS_TIMEOUT if hold_timeout is None else hold_timeout,
         )
     finally:
         lock.close()
@@ -496,6 +604,8 @@ def _install_latest(
     version: str,
     timeout: float,
     force: bool = True,
+    holders: Callable[[Path], set[int]] | None = None,
+    hold_timeout: float = WAIT_HOLDERS_TIMEOUT,
 ) -> dict[str, Any]:
     release = fetch_latest_release(
         environ=environ, transport=transport, timeout=timeout
@@ -526,7 +636,34 @@ def _install_latest(
     target = install.path
     if target is None:
         raise UpdateError(f"cannot locate {install.kind} install path")
-    replace_executable(target, data)
+    busy = {
+        "status": "busy",
+        "kind": install.kind,
+        "version": version,
+        "path": str(target),
+    }
+    if os.name != "nt":
+        if not wait_until_replace_safe(
+            target, holders=holders, timeout=hold_timeout
+        ):
+            return busy
+        run_lock = acquire_file_lock(
+            install_run_lock_path(target, environ),
+            exclusive=True,
+            blocking=True,
+        )
+        if run_lock is None:
+            return busy
+        try:
+            if not wait_until_replace_safe(
+                target, holders=holders, timeout=hold_timeout
+            ):
+                return busy
+            replace_executable(target, data)
+        finally:
+            run_lock.close()
+    else:
+        replace_executable(target, data)
     return {
         "status": "updated",
         "kind": install.kind,

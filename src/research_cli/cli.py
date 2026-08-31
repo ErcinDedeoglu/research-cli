@@ -28,7 +28,11 @@ from research_cli.keys import (
 )
 from research_cli.providers import bgpt, brave, exa, exploitdb, firecrawl, malpedia, reddit, sploitus, telegram, tgstat, x
 from research_cli.providers import firecrawl_papers as papers
-from research_cli.update import run_self_update, spawn_background_update
+from research_cli.update import (
+    hold_running_install_lock,
+    run_self_update,
+    spawn_background_update,
+)
 
 DESCRIPTION = (
     "Agent-facing research CLI. Direct HTTP REST calls for bgpt paper search, "
@@ -2023,6 +2027,8 @@ def main(
     environ = load_provider_keys(os.environ) if environ is None else environ
     stdout = sys.stdout if stdout is None else stdout
     stderr = sys.stderr if stderr is None else stderr
+    if "--self-update" not in argv:
+        hold_running_install_lock(environ=environ)
     if "--self-update" in argv:
         try:
             payload = run_self_update(environ=environ, transport=transport)
