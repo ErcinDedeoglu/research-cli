@@ -516,7 +516,7 @@ class ClientTests(unittest.TestCase):
                 download_file=dl,
                 output=raw,
                 media="document",
-                jobs=1,
+                jobs=4,
             )
         self.assertEqual(saved, ["https://t.me/pub/2"])
         self.assertEqual(
@@ -564,6 +564,27 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(saved, ["https://t.me/joinchat/AbCdefgh/1"])
         with self.assertRaises(ProviderHttpError):
             tgstat.fetch_files([], media="audio")
+        batch = [dict(hits[0]), dict(hits[1])]
+
+        def get_many(targets: list[str], jobs: int = 4) -> list[dict]:
+            self.assertEqual(jobs, 4)
+            return [getter(item) for item in targets]
+
+        saved.clear()
+        with tempfile.TemporaryDirectory() as raw:
+            tgstat.fetch_files(
+                batch,
+                get_many=get_many,
+                download_many=lambda items, jobs=4: [
+                    dl(target, output) for target, output in items
+                ],
+                output=raw,
+                media="document",
+                jobs=4,
+            )
+        self.assertEqual(saved, ["https://t.me/pub/2"])
+        self.assertEqual(batch[1]["telegram"]["download"]["filename"], "a.pdf")
+        self.assertFalse(batch[0]["has_media"])
 
     def test_download_without_telegram(self) -> None:
         with self.assertRaises(ProviderHttpError) as ctx:

@@ -4,8 +4,8 @@ Not the paid Search API. Needs logged-in site cookies (`TGSTAT_IDR` /
 `TGSTAT_SIRK`, optional `TGSTAT_CSRK` / `TGSTAT_SETTINGS`) from
 tgstat.com — same idea as X cookies. Search POSTs `/search/list` (20
 hits per page, hard ceiling 1000). Mentions chart, xlsx export, and
-source list use the same form. Files are t.me links; download falls
-through to the Telegram user session.
+source list use the same form. CLI command is `research-cli telegram search` (errors still name tgstat).
+Files are t.me links; download is `research-cli telegram download`.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from html import unescape
 from pathlib import Path
@@ -54,6 +53,8 @@ DEFAULT_MAX_BYTES = 25 * 1024 * 1024
 DOWNLOAD_JOBS = 4
 GetMessage = Callable[[str], dict[str, Any]]
 TelegramDownload = Callable[[str, str | None], dict[str, Any]]
+GetMany = Callable[..., list[dict[str, Any]]]
+DownloadMany = Callable[..., list[dict[str, Any]]]
 BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -962,7 +963,14 @@ def search(
 
 def _short_error(exc: BaseException) -> str:
     text = str(exc)
-    for label in ("expired invite", "not a member", "no media", "deleted"):
+    for label in (
+        "expired invite",
+        "not a member",
+        "no media",
+        "deleted",
+        "session busy",
+        "too large",
+    ):
         if label in text:
             return label
     return text.split(":")[-1].strip()[:200]
@@ -984,19 +992,33 @@ def enrich_hit(hit: dict[str, Any], get_message: GetMessage) -> dict[str, Any]:
     try:
         got = get_message(str(target))
     except Exception as exc:
-        tg = dict(hit.get("telegram") or {})
-        tg["has_media"] = False
-        tg["error"] = _short_error(exc)
-        hit["telegram"] = tg
-        hit["has_media"] = False
-        return hit
+        return _mark_hit_error(hit, exc)
+    return _apply_got(hit, got)
+
+
+def _mark_hit_error(hit: dict[str, Any], exc: BaseException | str) -> dict[str, Any]:
+    tg = dict(hit.get("telegram") or {})
+    tg["has_media"] = False
+    tg["error"] = _short_error(exc if isinstance(exc, BaseException) else Exception(str(exc)))
+    hit["telegram"] = tg
+    hit["has_media"] = False
+    return hit
+
+
+def _apply_got(hit: dict[str, Any], got: dict[str, Any] | None) -> dict[str, Any]:
+    if not got:
+        return _mark_hit_error(hit, "no media")
+    if got.get("error") and not got.get("message") and not _file_media(got.get("media")):
+        return _mark_hit_error(hit, str(got["error"]))
     media = got.get("media")
     if media is None and isinstance(got.get("message"), dict):
         media = got["message"].get("media")
     file_media = _file_media(media)
     is_file = file_media is not None
     tg = dict(hit.get("telegram") or {})
-    tg["target"] = str(target)
+    target = tg.get("target") or hit.get("url")
+    if target:
+        tg["target"] = str(target)
     tg["has_media"] = is_file
     tg["private"] = bool(hit.get("private") or tg.get("private"))
     if file_media:
@@ -1023,6 +1045,8 @@ def fetch_files(
     *,
     get_message: GetMessage | None = None,
     download_file: TelegramDownload | None = None,
+    get_many: GetMany | None = None,
+    download_many: DownloadMany | None = None,
     output: str | None = None,
     media: str | None = None,
     include_private: bool = False,
@@ -1043,30 +1067,33 @@ def fetch_files(
         if private and not include_private:
             continue
         work.append(hit)
-    if get_message is not None and work:
-        workers = max(1, min(int(jobs or DOWNLOAD_JOBS), len(work)))
-        if workers == 1:
-            for hit in work:
-                enrich_hit(hit, get_message)
-        else:
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                futs = [pool.submit(enrich_hit, hit, get_message) for hit in work]
-                for fut in as_completed(futs):
-                    fut.result()
-    if download_file is None or not output:
+    n_jobs = max(1, min(int(jobs or DOWNLOAD_JOBS), 8))
+    if work and get_many is not None:
+        targets = [
+            str((hit.get("telegram") or {}).get("target") or hit.get("url") or "")
+            for hit in work
+        ]
+        gots = get_many(targets, jobs=n_jobs)
+        for hit, got in zip(work, gots):
+            _apply_got(hit, got if isinstance(got, dict) else None)
+    elif get_message is not None:
+        for hit in work:
+            enrich_hit(hit, get_message)
+    if (download_file is None and download_many is None) or not output:
         return results
     dest_root = Path(output).expanduser()
     dest_root.mkdir(parents=True, exist_ok=True)
 
-    def _save(hit: dict[str, Any]) -> None:
+    pending: list[dict[str, Any]] = []
+    for hit in work:
         tg = hit.get("telegram") or {}
         if not tg.get("has_media"):
-            return
+            continue
         kind = tg.get("media")
         if isinstance(kind, dict):
             kind = kind.get("type")
         if want and kind != want:
-            return
+            continue
         size = tg.get("size")
         if (
             not allow_large
@@ -1075,11 +1102,18 @@ def fetch_files(
         ):
             tg["skipped"] = "too large"
             hit["telegram"] = tg
+            continue
+        if not tg.get("target"):
+            continue
+        pending.append(hit)
+
+    def _apply_saved(hit: dict[str, Any], saved: dict[str, Any] | None) -> None:
+        tg = dict(hit.get("telegram") or {})
+        if not saved or saved.get("error"):
+            if saved and saved.get("error"):
+                tg["error"] = _short_error(Exception(str(saved["error"])))
+            hit["telegram"] = tg
             return
-        target = tg.get("target")
-        if not target:
-            return
-        saved = download_file(str(target), str(dest_root))
         tg["download"] = {
             "path": saved.get("path"),
             "filename": saved.get("filename"),
@@ -1089,32 +1123,29 @@ def fetch_files(
         if isinstance(saved.get("message"), dict):
             hit["telegram_message"] = saved["message"]
 
-    to_save = [
-        hit
-        for hit in work
-        if (hit.get("telegram") or {}).get("has_media")
-    ]
-    workers = max(1, min(int(jobs or DOWNLOAD_JOBS), len(to_save) or 1))
-    if not to_save:
+    if not pending:
         return results
-    if workers == 1:
-        for hit in to_save:
-            try:
-                _save(hit)
-            except Exception as exc:
-                tg = dict(hit.get("telegram") or {})
-                tg["error"] = _short_error(exc)
-                hit["telegram"] = tg
-    else:
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futs = {pool.submit(_save, hit): hit for hit in to_save}
-            for fut, hit in futs.items():
-                try:
-                    fut.result()
-                except Exception as exc:
-                    tg = dict(hit.get("telegram") or {})
-                    tg["error"] = _short_error(exc)
-                    hit["telegram"] = tg
+    if download_many is not None:
+        pairs = [
+            (str((hit.get("telegram") or {}).get("target")), str(dest_root))
+            for hit in pending
+        ]
+        saved_list = download_many(pairs, jobs=n_jobs)
+        for hit, saved in zip(pending, saved_list):
+            _apply_saved(hit, saved if isinstance(saved, dict) else None)
+        return results
+    if download_file is None:
+        return results
+    for hit in pending:
+        target = str((hit.get("telegram") or {}).get("target") or "")
+        try:
+            saved = download_file(target, str(dest_root))
+        except Exception as exc:
+            tg = dict(hit.get("telegram") or {})
+            tg["error"] = _short_error(exc)
+            hit["telegram"] = tg
+            continue
+        _apply_saved(hit, saved)
     return results
 
 

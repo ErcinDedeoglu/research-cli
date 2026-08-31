@@ -3,9 +3,9 @@
 Needs TELEGRAM_API_ID, TELEGRAM_API_HASH, and a saved user session
 (TELEGRAM_SESSION and/or ~/.config/research-cli/telegram.session). Login is
 once; later commands reuse the file until Telegram revokes the device.
-Does not join groups or channels. Public post search is TGStat
-(`research-cli tgstat search`); this client is login, discover, history,
-resolve, get, and download.
+Does not join groups or channels. Public post search is
+`research-cli telegram search` (tgstat.com cookies). This client is login,
+discover, history, resolve, get, and download.
 """
 
 from __future__ import annotations
@@ -397,6 +397,13 @@ def mapped_error_body(exc: BaseException) -> str | None:
         or " is deleted" in blob
     ):
         return "deleted"
+    if (
+        "authorization is invalid" in blob
+        or "importauthorization" in blob
+        or "auth_key_duplicated" in blob
+        or "authkeyduplicated" in blob
+    ):
+        return "session busy"
     return None
 
 
@@ -1250,6 +1257,159 @@ async def _load_message(
     return peer, msg
 
 
+def _unlink_failed_download(path: Path | None, *, created: bool) -> None:
+    if path is None:
+        return
+    try:
+        if not path.is_file():
+            return
+        if created or path.stat().st_size == 0:
+            path.unlink()
+    except OSError:
+        return
+
+
+def _item_error(operation: str, target: str, exc: BaseException) -> dict[str, Any]:
+    if isinstance(exc, ProviderHttpError):
+        body = mapped_error_body(exc) or str(exc)
+    else:
+        try:
+            _raise_rpc(exc)
+        except MissingKeyError:
+            raise
+        except ProviderHttpError as mapped:
+            body = mapped_error_body(mapped) or str(mapped)
+        else:
+            body = str(exc)
+    short = body.split(":")[-1].strip()[:200]
+    for label in ("expired invite", "not a member", "no media", "deleted", "session busy"):
+        if label in body:
+            short = label
+            break
+    return {
+        "provider": "telegram",
+        "operation": operation,
+        "target": target,
+        "has_media": False,
+        "error": short,
+    }
+
+
+async def _get_record(
+    client: Any, target: str, chat: str | None = None
+) -> dict[str, Any]:
+    chat_parsed, message_id = _message_ref(target, chat)
+    try:
+        peer, msg = await _load_message(client, chat_parsed, message_id)
+        record = _stamp_known_chat(
+            serialize_message(msg, _peers_for(peer, msg)),
+            chat_parsed,
+            int(message_id),
+        )
+        media = (record or {}).get("media")
+        return {
+            "provider": "telegram",
+            "operation": "get",
+            "id": int(message_id),
+            "has_media": media_is_file(media),
+            "media": media,
+            "message": record,
+        }
+    except MissingKeyError:
+        raise
+    except ProviderHttpError:
+        raise
+    except Exception as exc:
+        _raise_rpc(exc)
+        raise  # pragma: no cover
+
+
+async def _download_record(
+    client: Any,
+    target: str,
+    chat: str | None = None,
+    output: str | None = None,
+) -> dict[str, Any]:
+    chat_parsed, message_id = _message_ref(target, chat)
+    dest: Path | None = None
+    created = False
+    try:
+        peer, msg = await _load_message(client, chat_parsed, message_id)
+        media = serialize_media(getattr(msg, "media", None))
+        if not media_is_file(media):
+            raise ProviderHttpError("telegram", 0, "no media")
+        filename = _media_filename(msg, int(message_id))
+        dest = _dest_path(output, filename)
+        created = not dest.exists()
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        downloader = getattr(client, "download_media")
+        saved = downloader(msg, file=str(dest))
+        if asyncio.iscoroutine(saved) or asyncio.isfuture(saved):
+            saved = await saved
+        path = Path(str(saved or dest)).expanduser()
+        size = path.stat().st_size if path.is_file() else None
+        record = _stamp_known_chat(
+            serialize_message(msg, _peers_for(peer, msg)),
+            chat_parsed,
+            int(message_id),
+        )
+        return {
+            "provider": "telegram",
+            "operation": "download",
+            "id": int(message_id),
+            "path": str(path.resolve()) if path.exists() else str(dest.resolve()),
+            "filename": path.name if path.exists() else filename,
+            "size": size,
+            "message": record,
+        }
+    except Exception:
+        _unlink_failed_download(dest, created=created)
+        raise
+
+
+def _jobs(jobs: int | None) -> int:
+    try:
+        n = int(jobs or 1)
+    except (TypeError, ValueError):
+        n = 1
+    return max(1, min(n, 8))
+
+
+async def _on_client(
+    items: list[Any],
+    worker: Any,
+    *,
+    session: str,
+    api_id: int,
+    api_hash: str,
+    timeout: float,
+    client_factory: ClientFactory | None,
+    session_file: str | Path | None,
+    env_path: Path | None,
+    jobs: int,
+) -> list[Any]:
+    client = await _connect(
+        session=session,
+        api_id=api_id,
+        api_hash=api_hash,
+        timeout=timeout,
+        client_factory=client_factory,
+        require_auth=True,
+        session_file=session_file,
+    )
+    try:
+        limit = _jobs(jobs)
+        sem = asyncio.Semaphore(limit)
+
+        async def one(item: Any) -> Any:
+            async with sem:
+                return await worker(client, item)
+
+        return list(await asyncio.gather(*[one(item) for item in items]))
+    finally:
+        await _disconnect(client, env_path=env_path, session_file=session_file)
+
+
 def get(
     target: str,
     *,
@@ -1262,8 +1422,6 @@ def get(
     env_path: Path | None = None,
     session_file: str | Path | None = None,
 ) -> dict[str, Any]:
-    chat_parsed, message_id = _message_ref(target, chat)
-
     async def _go() -> dict[str, Any]:
         client = await _connect(
             session=session,
@@ -1275,27 +1433,14 @@ def get(
             session_file=session_file,
         )
         try:
-            peer, msg = await _load_message(client, chat_parsed, message_id)
-            record = _stamp_known_chat(
-                serialize_message(msg, _peers_for(peer, msg)),
-                chat_parsed,
-                int(message_id),
-            )
-            media = (record or {}).get("media")
-            return {
-                "provider": "telegram",
-                "operation": "get",
-                "id": int(message_id),
-                "has_media": media_is_file(media),
-                "media": media,
-                "message": record,
-            }
+            return await _get_record(client, target, chat)
         except MissingKeyError:
             raise
         except ProviderHttpError:
             raise
         except Exception as exc:
             _raise_rpc(exc)
+            raise  # pragma: no cover
         finally:
             await _disconnect(client, env_path=env_path, session_file=session_file)
 
@@ -1315,8 +1460,6 @@ def download(
     env_path: Path | None = None,
     session_file: str | Path | None = None,
 ) -> dict[str, Any]:
-    chat_parsed, message_id = _message_ref(target, chat)
-
     async def _go() -> dict[str, Any]:
         client = await _connect(
             session=session,
@@ -1328,40 +1471,98 @@ def download(
             session_file=session_file,
         )
         try:
-            peer, msg = await _load_message(client, chat_parsed, message_id)
-            media = serialize_media(getattr(msg, "media", None))
-            if not media_is_file(media):
-                raise ProviderHttpError("telegram", 0, "no media")
-            filename = _media_filename(msg, int(message_id))
-            dest = _dest_path(output, filename)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            downloader = getattr(client, "download_media")
-            saved = downloader(msg, file=str(dest))
-            if asyncio.iscoroutine(saved) or asyncio.isfuture(saved):
-                saved = await saved
-            path = Path(str(saved or dest)).expanduser()
-            size = path.stat().st_size if path.is_file() else None
-            record = _stamp_known_chat(
-                serialize_message(msg, _peers_for(peer, msg)),
-                chat_parsed,
-                int(message_id),
-            )
-            return {
-                "provider": "telegram",
-                "operation": "download",
-                "id": int(message_id),
-                "path": str(path.resolve()) if path.exists() else str(dest.resolve()),
-                "filename": path.name if path.exists() else filename,
-                "size": size,
-                "message": record,
-            }
+            return await _download_record(client, target, chat, output)
         except MissingKeyError:
             raise
         except ProviderHttpError:
             raise
         except Exception as exc:
             _raise_rpc(exc)
+            raise  # pragma: no cover
         finally:
             await _disconnect(client, env_path=env_path, session_file=session_file)
+
+    return _run(_go())
+
+
+def get_many(
+    targets: list[str],
+    *,
+    api_id: int,
+    api_hash: str,
+    session: str,
+    jobs: int = 4,
+    timeout: float = 60.0,
+    client_factory: ClientFactory | None = None,
+    env_path: Path | None = None,
+    session_file: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    wanted = [str(item).strip() for item in targets if str(item).strip()]
+    if not wanted:
+        return []
+
+    async def worker(client: Any, target: str) -> dict[str, Any]:
+        try:
+            return await _get_record(client, target)
+        except MissingKeyError:
+            raise
+        except Exception as exc:
+            return _item_error("get", target, exc)
+
+    async def _go() -> list[dict[str, Any]]:
+        return await _on_client(
+            wanted,
+            worker,
+            session=session,
+            api_id=api_id,
+            api_hash=api_hash,
+            timeout=timeout,
+            client_factory=client_factory,
+            session_file=session_file,
+            env_path=env_path,
+            jobs=jobs,
+        )
+
+    return _run(_go())
+
+
+def download_many(
+    items: list[tuple[str, str | None]],
+    *,
+    api_id: int,
+    api_hash: str,
+    session: str,
+    jobs: int = 4,
+    timeout: float = 60.0,
+    client_factory: ClientFactory | None = None,
+    env_path: Path | None = None,
+    session_file: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    wanted = [(str(target).strip(), output) for target, output in items if str(target).strip()]
+    if not wanted:
+        return []
+
+    async def worker(client: Any, item: tuple[str, str | None]) -> dict[str, Any]:
+        target, output = item
+        try:
+            return await _download_record(client, target, None, output)
+        except MissingKeyError:
+            raise
+        except Exception as exc:
+            return _item_error("download", target, exc)
+
+    async def _go() -> list[dict[str, Any]]:
+        return await _on_client(
+            wanted,
+            worker,
+            session=session,
+            api_id=api_id,
+            api_hash=api_hash,
+            timeout=timeout,
+            client_factory=client_factory,
+            session_file=session_file,
+            env_path=env_path,
+            jobs=jobs,
+        )
 
     return _run(_go())

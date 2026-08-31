@@ -3,7 +3,7 @@
 
 # AGENTS.md
 
-**This repo** is an agent-facing **research CLI**. It calls **BGPT, Brave Search, Exa, Firecrawl, Reddit, Sploitus, Exploit-DB, Malpedia, X, and TGStat over HTTP REST**, and **Telegram as a user MTProto client via Telethon** for history/download (not Bot API, not MCP; public post search is TGStat). Agents use the CLI via the skill; coding agents change code here.
+**This repo** is an agent-facing **research CLI**. It calls **BGPT, Brave Search, Exa, Firecrawl, Reddit, Sploitus, Exploit-DB, Malpedia, X, and TGStat over HTTP REST**, and **Telegram as a user MTProto client via Telethon** for history/download (not Bot API, not MCP). Agents run **`telegram search`** (TGStat cookies) and **`telegram download`** (Telegram session); errors name **tgstat** vs **telegram**. Agents use the CLI via the skill; coding agents change code here.
 
 **Playbook for running research:** [`skills/research-cli/SKILL.md`](skills/research-cli/SKILL.md) — commands, env keys, when-to-use. Do not copy that into this file.
 
@@ -107,7 +107,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | Agent needs papers/web/scrape | Point at `skills/research-cli/SKILL.md` and the CLI — do not call vendor MCP servers |
 | Agent needs malware family/YARA | `research-cli malpedia search` then `family` / `yara` / `bib --family` / `references --url` (guest; sample zip not on CLI) |
 | Agent needs X/Twitter posts | `research-cli x search` then `x thread` (`X_AUTH_TOKEN` + `X_CT0`; never commit cookies) |
-| Agent needs Telegram posts | `tgstat search --peer-type channel` then keep public `telegram.has_media` hits and `tgstat download` **only** `telegram.target`. Or `tgstat search --download DIR --media document`. Text posts: `telegram get` that URL. Do not invent `telegram search`. Do not join. |
+| Agent needs Telegram posts | `telegram search --peer-type channel` then keep public `telegram.has_media` hits and `telegram download` **only** `telegram.target`. Or `telegram search --download DIR --media document`. Text posts: `telegram get`. Missing cookies error names **tgstat**; missing session names **telegram**. Do not join. |
 | Agent needs Telegram history/file on a known `@user` | `telegram login` once (`TELEGRAM_API_ID` + `TELEGRAM_API_HASH` + `TELEGRAM_SESSION`). Then `discover` / `history` / `download`. User account, not a bot; CLI does not join |
 | CVE/exploit/PoC also | Run sploitus **and** exploitdb (EDB is the OffSec primary; Sploitus is an index) |
 | Add/change a CLI command or flag | Update provider + `cli.py` + skill **Commands** (when-to-use, flags/defaults, a parseable example) + `tests/test_skill.py` in the same change, then copy `skills/research-cli/SKILL.md` to `/Users/ercin/git/github/kenopahq/skills/research-cli/` |
@@ -124,7 +124,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 ### Always
 - Keep `skills/research-cli/SKILL.md` aligned with `build_parser()` and `keys.py`. Install steps live in `skills/research-cli/INSTALL.md` (skill links the raw GitHub URL — agents with no binary) and `research-cli help install` (same body). Key setup lives in `research-cli help keys`.
 - Run `PYTHONPATH=src python -m unittest discover -s tests -v` after CLI/skill changes (Telethon must be installed: `pip install -e .`)
-- JSON on stdout, errors on stderr; missing Brave/Exa/Firecrawl/Reddit/X/TGStat/Telegram keys exit 2 and name the provider; Sploitus, Exploit-DB, and Malpedia catalog/YARA need no key; never commit `X_AUTH_TOKEN` / `X_CT0` / `TELEGRAM_SESSION` / `TGSTAT_IDR` / `TGSTAT_SIRK`
+- JSON on stdout, errors on stderr; missing Brave/Exa/Firecrawl/Reddit/X/TGStat/Telegram keys exit 2 and name the backend (**tgstat** cookies vs **telegram** session). CLI command is `telegram …`. Sploitus, Exploit-DB, and Malpedia catalog/YARA need no key; never commit `X_AUTH_TOKEN` / `X_CT0` / `TELEGRAM_SESSION` / `TGSTAT_IDR` / `TGSTAT_SIRK`
 - Conventional commits on `main`; leave `__version__` to the release workflow
 - Publish with `gh release create <tag> --verify-tag` (tag is created in the `version` job)
 
@@ -145,7 +145,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | Term | Means |
 |------|-------|
 | Skill | `skills/research-cli/SKILL.md` — how agents **run** the CLI |
-| Provider | One backend: bgpt, brave, exa, firecrawl, reddit, sploitus, exploitdb, malpedia, x, tgstat, telegram |
+| Provider | One backend: bgpt, brave, exa, firecrawl, reddit, sploitus, exploitdb, malpedia, x, tgstat, telegram. CLI command for Telegram is always `telegram`; JSON/errors still name tgstat vs telegram |
 | `--base-url` | Override API origin (fixture tests), not a vendor path |
 | `--live` | Firecrawl scrape `maxAge=0` |
 | `--self-update` | Foreground GitHub latest-release replace (always download matching asset) |
@@ -159,6 +159,6 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) tests 3.11/3.12 and 
 | malpedia | Fraunhofer FKIE malware catalog: guest `GET /api/find|get|list|yara|bib|misp|references`; bulk `yara-dump` / `yara-after`; sample zip not on CLI |
 | exploitdb | Guest DataTables: `GET /search` with `X-Requested-With: XMLHttpRequest`; hubs `/exploits/{id}`, `/raw/{id}`, GHDB, papers, shellcodes |
 | x | Logged-in X web GraphQL: `GET /i/api/graphql/{queryId}/SearchTimeline` and `TweetDetail`; cookies `auth_token`+`ct0`; generated `x-client-transaction-id`; homepage+ondemand+main.js cached ~1h under `RESEARCH_CLI_CACHE_DIR` |
-| tgstat | Logged-in tgstat.com Premium-search: `GET /search` CSRF + `POST /search/list` + mentions-chart + xls export + sources; cookies `tgstat_idrk`/`tgstat_sirk` as `TGSTAT_IDR`/`TGSTAT_SIRK`; 20/page, hard cap 1000; download is Telegram session |
-| telegram | User MTProto via Telethon (not Bot API): `TELEGRAM_API_ID`+`TELEGRAM_API_HASH`+`TELEGRAM_SESSION`; sqlite `telegram.session` next to the env file; login once; discover/history/download; does not join chats; public post search is tgstat |
+| tgstat | Backend for `telegram search`: logged-in tgstat.com Premium-search `GET /search` CSRF + `POST /search/list`; cookies `TGSTAT_IDR`/`TGSTAT_SIRK`; 20/page, cap 1000. Errors name **tgstat**. |
+| telegram | CLI: `telegram search` (TGStat cookies) and `telegram get`/`download`/`history` (Telethon user session). Errors name tgstat vs telegram. Does not join chats |
 | SemVer | `src/research_cli/__init__.py` `__version__`; skill frontmatter `version:` must match; tags `vMAJOR.MINOR.PATCH`; `python scripts/semver.py next` |

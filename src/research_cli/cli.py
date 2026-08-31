@@ -15,6 +15,7 @@ from research_cli.keys import (
     load_provider_keys,
     optional_bgpt_key,
     optional_telegram_session,
+    optional_tgstat_session,
     require_brave_key,
     require_exa_key,
     require_firecrawl_key,
@@ -35,11 +36,10 @@ DESCRIPTION = (
     "scrape/search/map/papers, reddit search/thread/subreddit, sploitus "
     "exploit/hacktool search, exploit-db exploits/GHDB/papers/shellcodes, "
     "malpedia malware families/actors/YARA/bib/MISP (guest), x "
-    "(Twitter) search/thread via the logged-in web GraphQL client, "
-    "tgstat public Telegram post search (Premium-search website session), and "
-    "telegram user-session history/download via Telethon MTProto "
-    "(not Bot API; does not join chats). "
-    "Do not use MCP; run this CLI."
+    "(Twitter) search/thread via the logged-in web GraphQL client, and "
+    "telegram post search plus user-session get/download (Telethon MTProto, "
+    "not Bot API; does not join chats). Search cookies vs Telegram session "
+    "errors name tgstat or telegram. Do not use MCP; run this CLI."
 )
 
 EPILOG = """\
@@ -53,8 +53,7 @@ providers:
   exploitdb     Exploit-DB search, latest, GHDB, papers, shellcodes (no API key)
   malpedia      Malpedia families, actors, YARA, bib, MISP, references (guest)
   x             X (Twitter) post search and tweet threads (cookie session)
-  tgstat        TGStat Premium-search (tgstat.com cookies; not Search API)
-  telegram      Telegram user-session discover, history, download (Telethon; no search)
+  telegram      Telegram posts (TGStat index) and user-session files (Telethon; no join)
   help          setup topics (install, keys)
 
 examples:
@@ -116,16 +115,13 @@ examples:
   research-cli x search "QUERY" --compact --fields id,url,text,user,likes
   research-cli x thread 2069347283918000383
   research-cli x thread https://x.com/user/status/2069347283918000383
-  research-cli tgstat search "llvm obfuscation" --limit 20
-  research-cli tgstat search "QUERY" --peer-type channel --sort views --views-range 1k-10k --forwards hide
-  research-cli tgstat search "QUERY" --download /tmp --media document --allow-large
-  research-cli tgstat sources "QUERY"
-  research-cli tgstat mentions "QUERY" --group month
-  research-cli tgstat export "QUERY" --output /tmp
-  research-cli tgstat catalogs
-  research-cli tgstat me
-  research-cli tgstat download https://t.me/durov/1 --output /tmp
-  research-cli tgstat download https://t.me/joinchat/AbCdefgh/12 --output /tmp
+  research-cli telegram search "llvm obfuscation" --limit 20
+  research-cli telegram search "QUERY" --peer-type channel --sort views --views-range 1k-10k --forwards hide
+  research-cli telegram search "QUERY" --download /tmp --media document --allow-large
+  research-cli telegram sources "QUERY"
+  research-cli telegram mentions "QUERY" --group month
+  research-cli telegram export "QUERY" --output /tmp
+  research-cli telegram catalogs
   research-cli telegram login --api-id 123456 --api-hash HASH --phone +15551234567
   research-cli telegram login --code 12345
   research-cli telegram me
@@ -215,13 +211,13 @@ Provider key map:
   firecrawl     FIRECRAWL_API_KEY
   reddit        REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET
   x             X_AUTH_TOKEN and X_CT0 (browser `auth_token` and `ct0` cookies)
-  tgstat        TGSTAT_IDR (cookie tgstat_idrk) and TGSTAT_SIRK (cookie tgstat_sirk). Optional TGSTAT_CSRK, TGSTAT_SETTINGS. Logged-in tgstat.com Premium-search, not Search API.
-  telegram      TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION. `telegram login` writes them plus `telegram.session` next to the env file. Later commands reuse that session (no phone/code). Optional TELEGRAM_SESSION_FILE. Not a BotFather token. Used for history/download, not public post search.
+  tgstat        TGSTAT_IDR (cookie tgstat_idrk) and TGSTAT_SIRK (cookie tgstat_sirk). Optional TGSTAT_CSRK, TGSTAT_SETTINGS. Used by `telegram search` / sources / mentions / export. Logged-in tgstat.com Premium-search, not Search API. Missing/dead cookies exit 2 and name **tgstat**.
+  telegram      TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION. Used by `telegram login` / history / get / download. `telegram login` writes them plus `telegram.session` next to the env file. Later file commands reuse that session (no phone/code). Optional TELEGRAM_SESSION_FILE. Not a BotFather token. Missing/dead session exit 2 and name **telegram**.
   sploitus      none
   exploitdb     none
   malpedia      none (guest access)
 
-Missing brave, exa, firecrawl, reddit, x, tgstat, or telegram keys exit 2 and name the provider. Dead x/tgstat cookies and dead telegram sessions also exit 2; if those sessions are unset, skip x/tgstat/telegram rather than blocking the other providers. Never commit keys, cookies, TELEGRAM_SESSION, TGSTAT_IDR, or TGSTAT_SIRK.
+Missing brave, exa, firecrawl, reddit, x, tgstat, or telegram keys exit 2 and name the backend (tgstat vs telegram). Dead x/tgstat cookies and dead telegram sessions also exit 2; if those sessions are unset, skip that telegram command rather than blocking the other providers. Never commit keys, cookies, TELEGRAM_SESSION, TGSTAT_IDR, or TGSTAT_SIRK.
 """,
 }
 HELP_TOPIC_ALIASES = {"installation": "install"}
@@ -290,15 +286,15 @@ def _tgstat_filter_flags() -> argparse.ArgumentParser:
     )
     filters.add_argument(
         "--country",
-        help="Channel geo slug (tgstat catalogs)",
+        help="Channel geo slug (telegram catalogs)",
     )
     filters.add_argument(
         "--language",
-        help="Content language slug (tgstat catalogs)",
+        help="Content language slug (telegram catalogs)",
     )
     filters.add_argument(
         "--category",
-        help="Channel topic slug (tgstat catalogs)",
+        help="Channel topic slug (telegram catalogs)",
     )
     filters.add_argument("--minus-words", help="Space-separated exclusion words")
     filters.add_argument(
@@ -309,7 +305,7 @@ def _tgstat_filter_flags() -> argparse.ArgumentParser:
     )
     filters.add_argument(
         "--channel-id",
-        help="Pin to one source (TGStat numeric id from tgstat sources)",
+        help="Pin to one source (numeric id from telegram sources)",
     )
     filters.add_argument(
         "--source-sort",
@@ -940,113 +936,83 @@ def build_parser() -> argparse.ArgumentParser:
         "--fields",
         help="Comma-separated tweet/reply keys (id,url,text,user,likes,…)",
     )
-    tgstat_p = sub.add_parser(
-        "tgstat",
-        help="TGStat Premium-search (tgstat.com session cookies)",
+    tg_p = sub.add_parser(
+        "telegram",
+        help="Telegram posts (TGStat index) and user-session files (Telethon, not Bot API)",
     )
-    tgstat_sub = tgstat_p.add_subparsers(dest="operation", required=True)
-    tgstat_search = tgstat_sub.add_parser(
+    tg_sub = tg_p.add_subparsers(dest="operation", required=True)
+    tg_search = tg_sub.add_parser(
         "search",
-        help="Premium-search website index (20/page, max 1000 posts)",
+        help="Public Telegram post index via tgstat.com cookies (20/page, max 1000)",
         parents=[shared, tgstat_filters],
     )
-    tgstat_search.add_argument("query", help="Search terms")
-    tgstat_search.add_argument(
+    tg_search.add_argument("query", help="Search terms")
+    tg_search.add_argument(
         "--limit", type=int, default=20, help="Max posts (default 20, cap 1000)"
     )
-    tgstat_search.add_argument(
+    tg_search.add_argument(
         "--offset", type=int, default=0, help="Start offset (steps of 20, cap 980)"
     )
-    tgstat_search.add_argument(
+    tg_search.add_argument(
         "--download",
         metavar="DIR",
-        help="Inspect via Telegram and save real files into DIR",
+        help="Inspect via Telegram session and save real files into DIR",
     )
-    tgstat_search.add_argument(
+    tg_search.add_argument(
         "--media",
         choices=tgstat.FILE_MEDIA_TYPES,
         help="Keep document, photo, or video (Telegram classification)",
     )
-    tgstat_search.add_argument(
+    tg_search.add_argument(
         "--private",
         action="store_true",
         help="Include private joinchat hits (skipped by default)",
     )
-    tgstat_search.add_argument(
+    tg_search.add_argument(
         "--allow-large",
         action="store_true",
         help="Download files larger than 25MB",
     )
-    tgstat_search.add_argument(
+    tg_search.add_argument(
         "--jobs",
         type=int,
         default=tgstat.DOWNLOAD_JOBS,
-        help="Parallel public get/download workers (default 4)",
+        help="Concurrent get/download on one Telegram session (default 4)",
     )
-    tgstat_sub.add_parser(
-        "me",
-        help="Probe tgstat.com session cookies",
-        parents=[shared],
-    )
-    tgstat_sources = tgstat_sub.add_parser(
+    tg_sources = tg_sub.add_parser(
         "sources",
         help="Mentioning channels for a query (ids for --channel-id)",
         parents=[shared, tgstat_filters],
     )
-    tgstat_sources.add_argument("query", help="Search terms")
-    tgstat_mentions = tgstat_sub.add_parser(
+    tg_sources.add_argument("query", help="Search terms")
+    tg_mentions = tg_sub.add_parser(
         "mentions",
         help="Mentions/reach chart (day or month)",
         parents=[shared, tgstat_filters],
     )
-    tgstat_mentions.add_argument("query", help="Search terms")
-    tgstat_mentions.add_argument(
+    tg_mentions.add_argument("query", help="Search terms")
+    tg_mentions.add_argument(
         "--group",
         choices=tgstat.CHART_GROUPS,
         default="day",
         help="day (default) or month",
     )
-    tgstat_export = tgstat_sub.add_parser(
+    tg_export = tg_sub.add_parser(
         "export",
-        help="Download Premium-search hits as xlsx",
+        help="Download index hits as xlsx (tgstat.com cookies)",
         parents=[shared, tgstat_filters],
     )
-    tgstat_export.add_argument("query", help="Search terms")
-    tgstat_export.add_argument(
+    tg_export.add_argument("query", help="Search terms")
+    tg_export.add_argument(
         "--output",
         "-o",
         help="File or directory (default: cwd, name from Content-Disposition)",
     )
-    tgstat_sub.add_parser(
+    tg_sub.add_parser(
         "catalogs",
         help="Country, language, category, and filter value lists",
         parents=[shared],
     )
-    tgstat_download = tgstat_sub.add_parser(
-        "download",
-        help="Save attachment via Telegram session (telegram.target from search)",
-        parents=[shared],
-    )
-    tgstat_download.add_argument(
-        "target",
-        help="telegram.target from search (https://t.me/user/id or joinchat/HASH/id)",
-    )
-    tgstat_download.add_argument(
-        "--output",
-        "-o",
-        help="File or directory (default: cwd, name from the document)",
-    )
-    tgstat_download.add_argument(
-        "--no-telegram",
-        action="store_true",
-        help="Do not call telegram (website has no file bytes; this errors)",
-    )
-
-    tg_p = sub.add_parser(
-        "telegram",
-        help="Telegram user-session discover/history/download (Telethon, not Bot API)",
-    )
-    tg_sub = tg_p.add_subparsers(dest="operation", required=True)
     tg_login = tg_sub.add_parser(
         "login",
         help="One-time user login; writes TELEGRAM_* into the env file",
@@ -1077,7 +1043,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not write ~/.config/research-cli/env (print session JSON instead)",
     )
-    tg_sub.add_parser("me", help="Current user for TELEGRAM_SESSION", parents=[shared])
+    tg_sub.add_parser(
+        "me",
+        help="Telegram user and/or tgstat.com cookie probe",
+        parents=[shared],
+    )
     tg_discover = tg_sub.add_parser(
         "discover",
         help="contacts.search: public users/groups/channels by name (no join)",
@@ -1113,7 +1083,7 @@ def build_parser() -> argparse.ArgumentParser:
     tg_get.add_argument("--chat", help="@username when target is a bare message id")
     tg_download = tg_sub.add_parser(
         "download",
-        help="Download media from one message (same URL as tgstat search telegram.target)",
+        help="Download media from one message (telegram.target from telegram search)",
         parents=[shared],
     )
     tg_download.add_argument(
@@ -1608,8 +1578,19 @@ def _dispatch_x(
 def _dispatch_telegram(
     args: argparse.Namespace,
     environ: Mapping[str, str],
+    transport: Transport | None,
     timeout: float,
 ) -> dict[str, Any]:
+    if args.operation in {
+        "search",
+        "sources",
+        "mentions",
+        "export",
+        "catalogs",
+    }:
+        return _dispatch_telegram_index(args, environ, transport, timeout)
+    if args.operation == "me":
+        return _dispatch_telegram_me(args, environ, transport, timeout)
     if args.operation == "login":
         merged = dict(environ)
         api_id_flag = getattr(args, "api_id", None)
@@ -1646,15 +1627,6 @@ def _dispatch_telegram(
     api_id, api_hash = require_telegram_app(environ)
     session = require_telegram_session(environ)
     env_path, session_file = telegram_persist_paths(environ)
-    if args.operation == "me":
-        return telegram.me(
-            api_id=api_id,
-            api_hash=api_hash,
-            session=session,
-            timeout=timeout,
-            env_path=env_path,
-            session_file=session_file,
-        )
     if args.operation == "discover":
         return telegram.discover(
             args.query,
@@ -1759,7 +1731,105 @@ def _telegram_download_fn(
     return _go
 
 
-def _dispatch_tgstat(
+def _telegram_get_many_fn(
+    environ: Mapping[str, str], timeout: float
+) -> Any:
+    api_id, api_hash = require_telegram_app(environ)
+    session = require_telegram_session(environ)
+    env_path, session_file = telegram_persist_paths(environ)
+
+    def _go(targets: list[str], jobs: int = 4) -> list[dict[str, Any]]:
+        return telegram.get_many(
+            targets,
+            api_id=api_id,
+            api_hash=api_hash,
+            session=session,
+            jobs=jobs,
+            timeout=timeout,
+            env_path=env_path,
+            session_file=session_file,
+        )
+
+    return _go
+
+
+def _telegram_download_many_fn(
+    environ: Mapping[str, str], timeout: float
+) -> Any:
+    api_id, api_hash = require_telegram_app(environ)
+    session = require_telegram_session(environ)
+    env_path, session_file = telegram_persist_paths(environ)
+
+    def _go(
+        items: list[tuple[str, str | None]], jobs: int = 4
+    ) -> list[dict[str, Any]]:
+        return telegram.download_many(
+            items,
+            api_id=api_id,
+            api_hash=api_hash,
+            session=session,
+            jobs=jobs,
+            timeout=timeout,
+            env_path=env_path,
+            session_file=session_file,
+        )
+
+    return _go
+
+
+def _telegram_ready(environ: Mapping[str, str]) -> bool:
+    try:
+        require_telegram_app(environ)
+        require_telegram_session(environ)
+        return True
+    except MissingKeyError:
+        return False
+
+
+def _dispatch_telegram_me(
+    args: argparse.Namespace,
+    environ: Mapping[str, str],
+    transport: Transport | None,
+    timeout: float,
+) -> dict[str, Any]:
+    payload: dict[str, Any] | None = None
+    if _telegram_ready(environ):
+        api_id, api_hash = require_telegram_app(environ)
+        session = require_telegram_session(environ)
+        env_path, session_file = telegram_persist_paths(environ)
+        payload = telegram.me(
+            api_id=api_id,
+            api_hash=api_hash,
+            session=session,
+            timeout=timeout,
+            env_path=env_path,
+            session_file=session_file,
+        )
+    cookie = optional_tgstat_session(environ)
+    if cookie:
+        origin = _origin(args, environ, tgstat.DEFAULT_ORIGIN)
+        probe = tgstat.me(
+            cookie=cookie,
+            origin=origin,
+            transport=transport,
+            timeout=timeout,
+        )
+        if payload is None:
+            payload = {"provider": "telegram", "operation": "me"}
+        payload["tgstat"] = {"status": probe.get("status", "ok")}
+    if payload is None:
+        raise MissingKeyError(
+            "telegram",
+            ("TELEGRAM_SESSION", "TGSTAT_IDR", "TGSTAT_SIRK"),
+            detail=(
+                "telegram me needs TELEGRAM_SESSION (Telegram user) and/or "
+                "TGSTAT_IDR+TGSTAT_SIRK (tgstat.com cookies for telegram search)"
+            ),
+        )
+    return payload
+
+
+def _dispatch_telegram_index(
     args: argparse.Namespace,
     environ: Mapping[str, str],
     transport: Transport | None,
@@ -1768,23 +1838,6 @@ def _dispatch_tgstat(
     origin = _origin(args, environ, tgstat.DEFAULT_ORIGIN)
     if args.operation == "catalogs":
         return tgstat.catalogs()
-    if args.operation == "me":
-        cookie = require_tgstat_session(environ)
-        return tgstat.me(
-            cookie=cookie,
-            origin=origin,
-            transport=transport,
-            timeout=timeout,
-        )
-    if args.operation == "download":
-        fallback = None
-        if not getattr(args, "no_telegram", False):
-            fallback = _telegram_download_fn(environ, timeout)
-        return tgstat.download(
-            args.target,
-            output=args.output,
-            telegram_download=fallback,
-        )
     cookie = require_tgstat_session(environ)
     filters = _tgstat_filter_kwargs(args)
     if args.operation == "search":
@@ -1803,15 +1856,15 @@ def _dispatch_tgstat(
         download_dir = getattr(args, "download", None)
         media = getattr(args, "media", None)
         if download_dir or media:
-            get_fn = _telegram_get_fn(environ, timeout)
-            dl_fn = (
-                _telegram_download_fn(environ, timeout) if download_dir else None
-            )
             results = payload.get("results") or []
             tgstat.fetch_files(
                 results,
-                get_message=get_fn,
-                download_file=dl_fn,
+                get_many=_telegram_get_many_fn(environ, timeout),
+                download_many=(
+                    _telegram_download_many_fn(environ, timeout)
+                    if download_dir
+                    else None
+                ),
                 output=download_dir,
                 media=media,
                 include_private=include_private,
@@ -1858,7 +1911,7 @@ def _dispatch_tgstat(
             timeout=timeout,
             **filters,
         )
-    raise ValueError(f"unknown command: tgstat {args.operation}")
+    raise ValueError(f"unknown command: telegram {args.operation}")
 
 
 def _dispatch(
@@ -1937,10 +1990,8 @@ def _dispatch(
         return _dispatch_malpedia(args, environ, transport, timeout)
     if args.provider == "x":
         return _dispatch_x(args, environ, transport, timeout)
-    if args.provider == "tgstat":
-        return _dispatch_tgstat(args, environ, transport, timeout)
     if args.provider == "telegram":
-        return _dispatch_telegram(args, environ, timeout)
+        return _dispatch_telegram(args, environ, transport, timeout)
     if args.provider == "help":
         return help_topic_payload(getattr(args, "topic", None))
     raise ValueError(f"unknown command: {args.provider} {getattr(args, 'operation', '')}")

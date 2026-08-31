@@ -119,6 +119,13 @@ class EnvFileTests(unittest.TestCase):
         self.assertEqual(ctx.exception.provider, "tgstat")
         header = require_tgstat_session({"TGSTAT_IDR": "i", "TGSTAT_SIRK": "s"})
         self.assertEqual(header, "tgstat_idrk=i; tgstat_sirk=s")
+        from research_cli.keys import optional_tgstat_session
+
+        self.assertEqual(optional_tgstat_session({}), "")
+        self.assertEqual(
+            optional_tgstat_session({"TGSTAT_IDR": "i", "TGSTAT_SIRK": "s"}),
+            "tgstat_idrk=i; tgstat_sirk=s",
+        )
 
 
 if __name__ == "__main__":

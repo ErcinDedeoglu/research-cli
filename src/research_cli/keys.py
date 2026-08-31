@@ -156,6 +156,14 @@ def require_x_credentials(environ: Mapping[str, str]) -> tuple[str, str]:
     return auth_token, ct0
 
 
+def optional_tgstat_session(environ: Mapping[str, str]) -> str:
+    idr = (environ.get("TGSTAT_IDR") or environ.get("TGSTAT_IDRK") or "").strip()
+    sirk = (environ.get("TGSTAT_SIRK") or "").strip()
+    if not idr or not sirk:
+        return ""
+    return require_tgstat_session(environ)
+
+
 def require_tgstat_session(environ: Mapping[str, str]) -> str:
     """Logged-in tgstat.com cookies (Premium-search), not Search API token."""
     idr = (environ.get("TGSTAT_IDR") or environ.get("TGSTAT_IDRK") or "").strip()
@@ -165,8 +173,9 @@ def require_tgstat_session(environ: Mapping[str, str]) -> str:
             "tgstat",
             ("TGSTAT_IDR", "TGSTAT_SIRK"),
             detail=(
-                "missing tgstat.com session cookies; copy tgstat_idrk → TGSTAT_IDR "
-                "and tgstat_sirk → TGSTAT_SIRK (HttpOnly; browser Application cookies)"
+                "missing tgstat.com session cookies for telegram search; "
+                "copy tgstat_idrk → TGSTAT_IDR and tgstat_sirk → TGSTAT_SIRK "
+                "(HttpOnly; browser Application cookies)"
             ),
         )
     csrf = (environ.get("TGSTAT_CSRK") or "").strip()

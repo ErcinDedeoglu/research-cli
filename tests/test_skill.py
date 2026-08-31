@@ -272,15 +272,16 @@ class SkillFileTests(unittest.TestCase):
     def test_telegram_file_loop_uses_tgstat_target(self) -> None:
         self.assertIn("telegram.target", self.text)
         self.assertIn("telegram.has_media", self.text)
-        self.assertIn("Do **not** invent `telegram search`", self.text)
         examples = "\n".join(_example_lines(self.text))
         self.assertIn("--download", examples)
         self.assertIn("--media", examples)
         self.assertIn("--allow-large", examples)
+        self.assertIn("telegram search", examples)
         self.assertIn("telegram get", examples)
-        self.assertIn("tgstat me", examples)
-        self.assertNotIn("telegram search", examples)
-        self.assertNotIn("telegram posts", examples)
+        self.assertIn("telegram me", examples)
+        self.assertIn("telegram download", examples)
+        self.assertNotIn("tgstat search", examples)
+        self.assertNotIn("tgstat download", examples)
 
 
 if __name__ == "__main__":

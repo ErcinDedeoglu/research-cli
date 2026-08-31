@@ -316,14 +316,13 @@ class MissingKeyTests(unittest.TestCase):
             (["reddit", "subreddit", "python"], "reddit"),
             (["x", "search", "q"], "x"),
             (["x", "thread", "123"], "x"),
-            (["tgstat", "search", "q"], "tgstat"),
-            (["tgstat", "me"], "tgstat"),
-            (["tgstat", "sources", "q"], "tgstat"),
-            (["tgstat", "mentions", "q"], "tgstat"),
-            (["tgstat", "export", "q"], "tgstat"),
-            (["tgstat", "download", "https://t.me/durov/1"], "telegram"),
+            (["telegram", "search", "q"], "tgstat"),
+            (["telegram", "sources", "q"], "tgstat"),
+            (["telegram", "mentions", "q"], "tgstat"),
+            (["telegram", "export", "q"], "tgstat"),
             (["telegram", "get", "https://t.me/durov/1"], "telegram"),
             (["telegram", "me"], "telegram"),
+            (["telegram", "download", "https://t.me/durov/1"], "telegram"),
             (["telegram", "login", "--phone", "+1"], "telegram"),
         ]
         empty = {}
@@ -348,11 +347,11 @@ class MissingKeyTests(unittest.TestCase):
         self.assertIn("x_ct0", thread.stderr.lower())
 
     def test_subprocess_missing_tgstat_cookies(self) -> None:
-        search = _run_module("tgstat", "search", "q")
+        search = _run_module("telegram", "search", "q")
         self.assertEqual(search.returncode, 2, search.stderr)
         self.assertIn("tgstat", search.stderr.lower())
         self.assertIn("tgstat_idr", search.stderr.lower())
-        catalogs = _run_module("tgstat", "catalogs")
+        catalogs = _run_module("telegram", "catalogs")
         self.assertEqual(catalogs.returncode, 0, catalogs.stderr)
         self.assertIn("english", catalogs.stdout)
 
@@ -410,7 +409,7 @@ class FixtureServerCliTests(unittest.TestCase):
             (["exploitdb", "search", "log4j"], EDB_TITLE),
             (["malpedia", "search", "emotet"], MALPEDIA_FAMILY_ID),
             (["x", "search", "VMProtect"], X_TEXT),
-            (["tgstat", "search", "llvm"], TGSTAT_TEXT),
+            (["telegram", "search", "llvm"], TGSTAT_TEXT),
         ]
         for _ in range(2):
             for args, needle in commands:

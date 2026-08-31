@@ -80,6 +80,7 @@ class FakeClient:
     def __init__(self, **handlers: object) -> None:
         self.handlers = handlers
         self.calls: list[object] = []
+        self.connects = 0
         self.authorized = bool(handlers.get("authorized", True))
         self.session = SimpleNamespace(save=lambda: "SESS")
         self.me = SimpleNamespace(
@@ -87,6 +88,7 @@ class FakeClient:
         )
 
     async def connect(self) -> None:
+        self.connects += 1
         return None
 
     async def disconnect(self) -> None:
@@ -582,6 +584,12 @@ class ClientOpTests(unittest.TestCase):
             )
         )
         self.assertEqual(telegram.mapped_error_body(Expired("x")), "expired invite")
+        self.assertEqual(
+            telegram.mapped_error_body(
+                RuntimeError("The provided authorization is invalid (ImportAuthorizationRequest)")
+            ),
+            "session busy",
+        )
 
         class NotMember(Exception):
             pass
@@ -605,6 +613,79 @@ class ClientOpTests(unittest.TestCase):
         )
         with self.assertRaises(ProviderHttpError):
             telegram.login(phone="", api_id=1, api_hash="h", client_factory=_factory(client))
+
+    def test_get_many_one_client_and_failed_download_unlinks(self) -> None:
+        client = FakeClient(
+            ResolveUsernameRequest=lambda req: SimpleNamespace(
+                peer=SimpleNamespace(channel_id=99),
+                chats=[_channel()],
+                users=[],
+            ),
+            get_messages=lambda peer, ids: _msg(id=int(ids), media=None),
+        )
+        out = telegram.get_many(
+            ["https://t.me/rev/11", "https://t.me/rev/12"],
+            api_id=1,
+            api_hash="h",
+            session="S",
+            jobs=4,
+            client_factory=_factory(client),
+        )
+        self.assertEqual(client.connects, 1)
+        self.assertEqual([item["id"] for item in out], [11, 12])
+        gone = FakeClient(
+            ResolveUsernameRequest=lambda req: SimpleNamespace(
+                peer=SimpleNamespace(channel_id=99),
+                chats=[_channel()],
+                users=[],
+            ),
+            get_messages=lambda peer, ids: type("MessageEmpty", (), {"id": ids})(),
+        )
+        missed = telegram.get_many(
+            ["https://t.me/rev/11"],
+            api_id=1,
+            api_hash="h",
+            session="S",
+            client_factory=_factory(gone),
+        )
+        self.assertEqual(missed[0]["error"], "deleted")
+
+        def boom(_msg: object, file: str | None = None) -> str:
+            path = Path(file or "out.bin")
+            path.write_bytes(b"")
+            raise RuntimeError(
+                "The provided authorization is invalid (caused by ImportAuthorizationRequest)"
+            )
+
+        doc = SimpleNamespace(
+            id=5,
+            mime_type="application/zip",
+            size=4,
+            attributes=[SimpleNamespace(file_name="poc.zip")],
+        )
+        msg = _msg(media=SimpleNamespace(document=doc))
+        flaky = FakeClient(
+            ResolveUsernameRequest=lambda req: SimpleNamespace(
+                peer=SimpleNamespace(channel_id=99),
+                chats=[_channel()],
+                users=[],
+            ),
+            get_messages=lambda peer, ids: msg,
+            download_media=boom,
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            dest = Path(raw)
+            saved = telegram.download_many(
+                [("https://t.me/rev/11", str(dest))],
+                api_id=1,
+                api_hash="h",
+                session="S",
+                jobs=2,
+                client_factory=_factory(flaky),
+            )
+            self.assertEqual(saved[0]["error"], "session busy")
+            self.assertEqual(list(dest.iterdir()), [])
+        self.assertEqual(telegram.get_many([], api_id=1, api_hash="h", session="S"), [])
 
     def test_errors_unauthorized_flood_expired(self) -> None:
         denied = FakeClient(authorized=False)
@@ -1159,13 +1240,13 @@ class DispatchTests(unittest.TestCase):
             with patch(
                 f"research_cli.cli.telegram.{op}", return_value={"operation": op}
             ):
-                payload = _dispatch_telegram(args, env, 30.0)
+                payload = _dispatch_telegram(args, env, None, 30.0)
             self.assertEqual(payload["operation"], op)
         args = parser.parse_args(["telegram", "login", "--phone", "+1", "--no-write-env"])
         with patch(
             "research_cli.cli.telegram.login", return_value={"operation": "login"}
         ) as fn:
-            _dispatch_telegram(args, env, 30.0)
+            _dispatch_telegram(args, env, None, 30.0)
         self.assertIsNone(fn.call_args.kwargs["env_path"])
         self.assertIsNone(fn.call_args.kwargs.get("session_file"))
         pending = dict(env)
@@ -1175,7 +1256,7 @@ class DispatchTests(unittest.TestCase):
         with patch(
             "research_cli.cli.telegram.login", return_value={"operation": "login"}
         ) as fn:
-            _dispatch_telegram(args, pending, 30.0)
+            _dispatch_telegram(args, pending, None, 30.0)
         self.assertEqual(fn.call_args.kwargs["phone"], "+1999")
         self.assertEqual(fn.call_args.kwargs["phone_code_hash"], "HH")
         import argparse
@@ -1184,6 +1265,7 @@ class DispatchTests(unittest.TestCase):
             _dispatch_telegram(
                 argparse.Namespace(operation="join"),
                 env,
+                None,
                 30.0,
             )
 
