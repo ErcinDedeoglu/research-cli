@@ -4,11 +4,12 @@ version: 0.13.1
 description: >
   MUST USE for search and research. Whenever the user asks to search, research,
   look up, find, google, investigate, cite, gather sources, check the web, or
-  find papers/literature — run this CLI and call EVERY provider in parallel
-  (bgpt, brave, exa, firecrawl, reddit, x, telegram). For CVE, exploit, PoC, RCE, or hacktool
-  queries, also run sploitus and exploitdb. For malware family, YARA, or actor
-  queries, also run malpedia. For Telegram files after a telegram search hit, use telegram download
-  on telegram.target. Do not pick one. Do not guess or use vendor MCP.
+  find papers/literature — run this CLI, not vendor MCP. Match the query to
+  providers by job (web, papers, reddit, x, telegram, exploits, malware) and
+  run only the matching set in parallel in one turn. Do not run the full
+  catalog. Do not wait on one provider before starting the next. CVE/exploit/PoC/RCE/hacktool
+  → sploitus and exploitdb. Malware family/YARA/actor → malpedia. Telegram files:
+  telegram download on telegram.target after a telegram search hit.
   Triggers: search, research, papers, literature, scrape, lookup, google, cite,
   sources, bgpt, brave, exa, firecrawl, reddit, sploitus, exploitdb, malpedia, x, twitter, telegram, tgstat, /research-cli.
 ---
@@ -29,33 +30,20 @@ JSON on stdout, errors on stderr. Shared flags on every provider command: `--tim
 
 ## Search
 
-Same query, all of these in parallel. Do not pick one provider.
+Match the query to rows. Run the **union of matching rows**. Copy invocations from **Commands**. Issue each matching command as its own concurrent tool call in **one turn** — not a shell script, and not one provider after another. Skip rows that do not match. If none match, use Web only.
 
-```bash
-research-cli bgpt search "QUERY"
-research-cli brave llm-context "QUERY"
-research-cli exa search "QUERY"
-research-cli firecrawl search "QUERY" --categories research
-research-cli firecrawl papers search "QUERY"
-research-cli reddit search "QUERY"
-research-cli x search "QUERY"
-research-cli telegram search "QUERY"
-```
+| Query is about | Providers |
+|---|---|
+| Web, facts, lookup, "google" | brave `llm-context`, exa `search`, firecrawl `search` |
+| Papers, literature, arXiv | bgpt `search`, firecrawl `papers search`, firecrawl `search --categories research` |
+| Reddit / community discussion | reddit `search` |
+| X / Twitter | x `search` |
+| Telegram posts / channel files | telegram `search` (then download loop in **Commands**) |
+| CVE, exploit, PoC, RCE, hacktool | sploitus `search` **and** exploitdb `search` |
+| Malware family, YARA, actor | malpedia `search` |
+| One known URL | firecrawl `scrape` or exa `contents` |
 
-CVE / exploit / PoC / RCE / hacktool — also:
-
-```bash
-research-cli sploitus search "QUERY"
-research-cli exploitdb search "QUERY"
-```
-
-Malware family / YARA / actor — also:
-
-```bash
-research-cli malpedia search "QUERY"
-```
-
-Merge the JSON, then use **Commands** to follow a hit (scrape a URL, open a thread, read a paper id, dump a PoC, `telegram download` a Telegram file). Do not stop at titles if the user needs the page, comments, or exploit body.
+Missing key: skip that provider, keep the rest (**Keys**). Merge JSON, then follow hits with **Commands**. Do not stop at titles if the user needs the page, comments, or exploit body.
 
 ## Commands
 
@@ -84,7 +72,7 @@ research-cli bgpt search "CRISPR delivery neurons" --num-results 5
 
 Web. Needs `BRAVE_API_KEY` or `BRAVE_SEARCH_API_KEY`.
 
-- `llm-context` — ranked **page chunks** (use this on the parallel search). `--count` default 20.
+- `llm-context` — ranked **page chunks** (web lookup). `--count` default 20.
 - `search` — titles/URLs/snippets only. `--count` default 10. `--offset` pages.
 
 Shared: `--country`. `--freshness` is `pd` (day), `pw` (week), `pm` (month), `py` (year), or `YYYY-MM-DDtoYYYY-MM-DD`.
@@ -110,7 +98,7 @@ research-cli exa contents https://example.com
 
 Scrape + web search + paper index. Needs `FIRECRAWL_API_KEY`.
 
-- `search` — web hits. `--limit` default 10. `--categories` (use `research` on the parallel search). `--include-domains` / `--exclude-domains`. `--scrape` also fetches markdown for each hit.
+- `search` — web hits. `--limit` default 10. `--categories` (use `research` for papers/literature). `--include-domains` / `--exclude-domains`. `--scrape` also fetches markdown for each hit.
 - `scrape` — one URL to markdown. `--live` forces a live fetch (`maxAge=0`). `--formats` default `markdown`. `--max-age` ms. `--no-main-content` keeps chrome.
 - `map` — list URLs under a site. `--search` filters paths. `--limit` default 50.
 - `papers` — research **index** (not BGPT). `search` → `inspect` → `read` / `related`. Paper ids look like `arxiv:1706.03762`.

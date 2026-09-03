@@ -153,7 +153,6 @@ class SkillFileTests(unittest.TestCase):
         self.assertIn("search", desc)
         self.assertIn("research", desc)
         self.assertIn("parallel", desc)
-        self.assertIn("every provider", self.text.lower())
         self.assertIn("version guard", self.text.lower())
         self.assertIn("help install", self.text.lower())
         self.assertIn(INSTALL_DOC_URL, self.text)
@@ -268,6 +267,29 @@ class SkillFileTests(unittest.TestCase):
         agents = AGENTS.read_text(encoding="utf-8")
         self.assertIn("skills/research-cli/SKILL.md", agents)
         self.assertIn("mcp", agents.lower())
+
+    def test_search_routes_by_job_not_full_catalog(self) -> None:
+        text = self.text.lower()
+        self.assertNotIn("call every provider", text)
+        self.assertNotIn("do not pick one", text)
+        self.assertNotIn("same query, all of these", text)
+        self.assertIn("## search", text)
+        self.assertIn("one turn", text)
+        self.assertIn("union of matching rows", text)
+        self.assertIn("if none match, use web only", text)
+        self.assertRegex(self.text, r"(?m)^\s*\| Query is about \s*\|")
+        for needle in (
+            "brave",
+            "exa",
+            "firecrawl",
+            "bgpt",
+            "reddit",
+            "telegram",
+            "sploitus",
+            "exploitdb",
+            "malpedia",
+        ):
+            self.assertIn(needle, text)
 
     def test_telegram_file_loop_uses_tgstat_target(self) -> None:
         self.assertIn("telegram.target", self.text)
